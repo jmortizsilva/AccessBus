@@ -12,6 +12,8 @@ import red from './red.json';
 export interface Enlace {
   /** Etiqueta pública de la línea (p.ej. "116", "E1", "001"). */
   lin: string;
+  /** Sentido de la línea (1 o 2) al que corresponde ese destino. */
+  dir: number;
   /** Última parada de ese sentido (p.ej. "Embajadores"). */
   destino: string;
 }
@@ -33,4 +35,20 @@ export function lineasDeParada(stopCode: string): Enlace[] {
  */
 export function enlacesDeParada(stopCode: string, excluirLinea?: string): Enlace[] {
   return lineasDeParada(stopCode).filter((e) => !excluirLinea || e.lin !== excluirLinea);
+}
+
+/**
+ * Sentido (1 o 2) en el que una línea pasa por una parada. Sirve para abrir
+ * directamente el recorrido correcto al pulsar un tiempo de llegada, sin tener
+ * que adivinarlo comparando el nombre del destino (que no siempre coincide:
+ * la API dice "VIRGEN CORTIJO" y la parada final se llama "Virgen del Cortijo").
+ */
+export function sentidoDeLinea(stopCode: string, lin: string): 1 | 2 | undefined {
+  const coincidencias = lineasDeParada(stopCode).filter((e) => e.lin === lin);
+  if (coincidencias.length !== 1) {
+    // Si la línea pasa en ambos sentidos por la misma parada no hay una
+    // respuesta única; que decida la pantalla (empieza por el sentido 1).
+    return undefined;
+  }
+  return coincidencias[0].dir === 2 ? 2 : 1;
 }

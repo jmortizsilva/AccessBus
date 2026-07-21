@@ -16,7 +16,7 @@ type Nav = NativeStackNavigationProp<LineasStackParamList, 'LineaParadas'>;
 export default function LineaParadasScreen() {
   const route = useRoute<RouteProp<LineasStackParamList, 'LineaParadas'>>();
   const navigation = useNavigation<Nav>();
-  const { linea } = route.params;
+  const { linea, sentido: sentidoPedido } = route.params;
   const { lineas, diaServicio, isFavoriteLinea, toggleFavoriteLinea } = useApp();
   const [horarios, setHorarios] = useState<HorarioLinea[]>([]);
 
@@ -30,7 +30,7 @@ export default function LineaParadasScreen() {
   const [paradas, setParadas] = useState<Parada[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [sentido, setSentido] = useState<1 | 2>(1);
+  const [sentido, setSentido] = useState<1 | 2>(sentidoPedido ?? 1);
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: `Línea ${linea.lin}` });

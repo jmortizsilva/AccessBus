@@ -90,7 +90,7 @@ async function main() {
     }
   }
 
-  const rutas = [];            // [{ lin, destino }]
+  const rutas = [];            // [{ lin, dir, destino }]
   const porParada = new Map(); // stopCode -> Set(indice de ruta)
   let hechas = 0;
   let fallos = 0;
@@ -104,7 +104,7 @@ async function main() {
         if (stops.length > 0) {
           const destino = String(stops[stops.length - 1]?.name ?? '').trim();
           if (destino) {
-            const idx = rutas.push({ lin: t.lin, destino }) - 1;
+            const idx = rutas.push({ lin: t.lin, dir: t.dir, destino }) - 1;
             for (const s of stops) {
               const code = String(s?.stop ?? '');
               if (!code) continue;

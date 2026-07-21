@@ -1,5 +1,6 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import BuscarScreen from '../screens/BuscarScreen';
+import LineaParadasScreen from '../screens/LineaParadasScreen';
 import ParadaScreen from '../screens/ParadaScreen';
 import { theme } from '../theme';
 import { BuscarStackParamList } from './types';
@@ -19,6 +20,7 @@ export default function BuscarStack() {
     >
       <Stack.Screen name="BuscarHome" component={BuscarScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Parada" component={ParadaScreen} options={{ title: '' }} />
+      <Stack.Screen name="LineaParadas" component={LineaParadasScreen} options={{ title: '' }} />
     </Stack.Navigator>
   );
 }

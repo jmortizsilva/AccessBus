@@ -4,16 +4,19 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Aviso, getLlegadas, getStopsAroundStop, NearbyResult } from '../services/emt';
 import { asegurarPermisoNotificaciones, avisar } from '../services/notificaciones';
-import { lineasDeParada } from '../data/red';
+import { lineasDeParada, sentidoDeLinea } from '../data/red';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
-import { Parada, Tiempo } from '../types';
+import { Linea, Parada, Tiempo } from '../types';
 import { formatDistance } from '../utils/distance';
 import { parseLineasPaso, prettyLinea } from '../utils/lineas';
 import { spokenTiempo } from '../utils/tiempos';
 
 type ParadaParams = { Parada: { parada: Parada } };
-type Nav = NativeStackNavigationProp<{ Parada: { parada: Parada } }>;
+type Nav = NativeStackNavigationProp<{
+  Parada: { parada: Parada };
+  LineaParadas: { linea: Linea; sentido?: 1 | 2 };
+}>;
 
 const AUTO_REFRESH_MS = 30_000;
 const VIGILANCIA_MS = 20_000;
@@ -22,7 +25,7 @@ const CERCANAS_RADIO = 300;
 export default function ParadaScreen() {
   const route = useRoute<RouteProp<ParadaParams, 'Parada'>>();
   const navigation = useNavigation<Nav>();
-  const { isFavorite, addFavorite, removeFavorite, umbralMin } = useApp();
+  const { isFavorite, addFavorite, removeFavorite, umbralMin, lineas } = useApp();
 
   const [parada, setParada] = useState<Parada>(route.params.parada);
   const [times, setTimes] = useState<Tiempo[]>([]);
@@ -238,23 +241,41 @@ export default function ParadaScreen() {
         <Text style={styles.note}>No hay autobuses próximos ahora mismo.</Text>
       ) : null}
 
-      {times.map((t, index) => (
-        <View
-          key={`${t.linea}-${index}`}
-          style={styles.timeRow}
-          accessible
-          accessibilityLabel={spokenTiempo(t)}
-        >
-          <View style={styles.timeLeft}>
-            <Text style={styles.timeLinea}>Línea {t.linea}</Text>
-            {t.destino ? <Text style={styles.timeDest}>{t.destino}</Text> : null}
-          </View>
-          <View style={styles.timeRight}>
-            <Text style={styles.timeMin}>{t.tiempoText || '—'}</Text>
-            <Text style={styles.timeDist}>{t.distanciaText}</Text>
-          </View>
-        </View>
-      ))}
+      {times.map((t, index) => {
+        // Al pulsar se abre el recorrido de esa línea, para seguir el viaje.
+        const linea = lineas.find((l) => l.lin === t.linea);
+        return (
+          <Pressable
+            key={`${t.linea}-${index}`}
+            style={styles.timeRow}
+            onPress={
+              linea
+                ? () =>
+                    navigation.navigate('LineaParadas', {
+                      linea,
+                      sentido: sentidoDeLinea(parada.stopCode, t.linea),
+                    })
+                : undefined
+            }
+            disabled={!linea}
+            accessibilityRole={linea ? 'button' : undefined}
+            accessible
+            accessibilityLabel={spokenTiempo(t)}
+            accessibilityHint={
+              linea ? 'Toca dos veces para ver el recorrido de esta línea' : undefined
+            }
+          >
+            <View style={styles.timeLeft}>
+              <Text style={styles.timeLinea}>Línea {t.linea}</Text>
+              {t.destino ? <Text style={styles.timeDest}>{t.destino}</Text> : null}
+            </View>
+            <View style={styles.timeRight}>
+              <Text style={styles.timeMin}>{t.tiempoText || '—'}</Text>
+              <Text style={styles.timeDist}>{t.distanciaText}</Text>
+            </View>
+          </Pressable>
+        );
+      })}
 
       {lineasParada.length > 0 && (
         <>
