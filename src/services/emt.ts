@@ -23,23 +23,43 @@ const PASS_KEY = process.env.EXPO_PUBLIC_EMT_PASSKEY?.trim() ?? '';
 const EMAIL = process.env.EXPO_PUBLIC_EMT_EMAIL?.trim() ?? '';
 const PASSWORD = process.env.EXPO_PUBLIC_EMT_PASSWORD?.trim() ?? '';
 const NETWORK_TIMEOUT_MS = 20_000;
+/** Intentos por petición, para absorber los fallos intermitentes de la API. */
+const REINTENTOS = 3;
 
 let token: string | undefined;
 let tokenExpiresAt = 0;
 
+const espera = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * fetch con timeout y REINTENTOS.
+ *
+ * La API de EMT falla de forma intermitente (resoluciones DNS que no van,
+ * handshakes TLS cortados). Sin reintentos, un tropiezo puntual al abrir la app
+ * se convertía en un error en pantalla, aunque el servicio estuviera bien.
+ * Solo se reintentan los fallos de red: si el servidor responde, se devuelve tal cual.
+ */
 async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } catch (error) {
-    if ((error as Error)?.name === 'AbortError') {
-      throw new Error(`Tiempo de espera agotado (${NETWORK_TIMEOUT_MS}ms)`);
+  let ultimo: unknown;
+  for (let intento = 0; intento < REINTENTOS; intento++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (error) {
+      ultimo = error;
+    } finally {
+      clearTimeout(timer);
     }
-    throw error;
-  } finally {
-    clearTimeout(timer);
+    if (intento < REINTENTOS - 1) {
+      await espera(600 * (intento + 1));
+    }
   }
+  throw new Error(
+    (ultimo as Error)?.name === 'AbortError'
+      ? 'El servicio de EMT tarda demasiado en responder'
+      : 'Sin conexión con el servicio de EMT'
+  );
 }
 
 async function login(): Promise<string> {
@@ -66,7 +86,8 @@ async function login(): Promise<string> {
     );
   }
 
-  let lastError = 'sin respuesta';
+  let ultimoError = 'sin respuesta del servidor';
+  let fallosDeRed = 0;
   for (const attempt of attempts) {
     try {
       const res = await fetchWithTimeout(`${BASE}/v2/mobilitylabs/user/login/`, {
@@ -81,12 +102,18 @@ async function login(): Promise<string> {
         tokenExpiresAt = Date.now() + Math.max(60, secs - 30) * 1000;
         return accessToken;
       }
-      lastError = `${attempt.label}: código ${json?.code ?? res.status}`;
+      // El servidor contestó pero rechazó las credenciales.
+      ultimoError = `credenciales rechazadas (código ${json?.code ?? res.status})`;
     } catch (error) {
-      lastError = `${attempt.label}: ${String((error as Error).message ?? error)}`;
+      fallosDeRed++;
+      ultimoError = String((error as Error).message ?? error);
     }
   }
-  throw new Error(`Login EMT fallido (${lastError})`);
+  // Si todos los intentos fueron fallos de red, el mensaje ya es claro para el
+  // usuario ("Sin conexión con el servicio de EMT"); no lo enterramos en jerga.
+  throw new Error(
+    fallosDeRed === attempts.length ? ultimoError : `No se pudo iniciar sesión en EMT: ${ultimoError}`
+  );
 }
 
 async function getToken(): Promise<string> {
