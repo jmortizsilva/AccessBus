@@ -4,17 +4,17 @@ import { Parada } from '../types';
 import { spokenTiempo } from './tiempos';
 
 /**
- * Núcleo de una etiqueta de línea para comparar. Además de normalizar, quita los
- * ceros a la izquierda: la API devuelve "001" en el listado de líneas y "1" en las
- * llegadas, y sin esto las acciones de rotor no encontrarían el tiempo de la línea.
+ * Núcleo de una etiqueta de línea para comparar.
+ *
+ * OJO: no se quitan los ceros a la izquierda porque son significativos: "001" y
+ * "1" son líneas distintas en la EMT (igual que "002" y "2").
  */
 export function lineaCore(label: string): string {
-  const s = String(label ?? '')
+  return String(label ?? '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toUpperCase()
     .trim();
-  return /^0\d+$/.test(s) ? s.replace(/^0+/, '') : s;
 }
 
 /** Nombre legible de una línea (p.ej. "5" -> "Línea 5"). */

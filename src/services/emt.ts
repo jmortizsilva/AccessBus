@@ -126,14 +126,15 @@ const apiPost = (path: string, body: unknown) =>
   });
 
 /**
- * Etiqueta pública homogénea de una línea. La API es inconsistente: `lines/info`
- * y las paradas devuelven la etiqueta con ceros a la izquierda ("001", "014"),
- * mientras que las llegadas la devuelven sin ellos ("1", "14", "M3"). Quitamos
- * los ceros para que ambas fuentes casen (imprescindible para el rotor).
+ * Etiqueta pública de una línea, tal cual la publica la EMT.
+ *
+ * IMPORTANTE: los ceros a la izquierda son significativos y NO se deben quitar.
+ * "001" (Atocha-Moncloa, línea eléctrica) y "1" (Cristo Rey-Prosperidad) son
+ * líneas distintas, igual que "002" y "2". La API es coherente y devuelve la
+ * misma etiqueta en el listado de líneas y en las llegadas.
  */
 export function normalizeLabel(value: unknown): string {
-  const label = String(value ?? '').trim().toUpperCase();
-  return /^0\d+$/.test(label) ? label.replace(/^0+/, '') : label;
+  return String(value ?? '').trim().toUpperCase();
 }
 
 function dedupeLabels(labels: unknown[]): string[] {
@@ -222,8 +223,6 @@ export async function getTiempos(stopId: string): Promise<Tiempo[]> {
     .sort((x, y) => (x.minutos ?? Number.MAX_SAFE_INTEGER) - (y.minutos ?? Number.MAX_SAFE_INTEGER));
 }
 
-const esCanonica = (l: Linea): number => (normalizeLabel(l.id) === l.lin ? 1 : 0);
-
 // Fecha de referencia YYYYMMDD que piden los endpoints de líneas.
 function todayRef(): string {
   const d = new Date();
@@ -236,31 +235,45 @@ function todayRef(): string {
  * Listado de líneas. TODO: confirmar la forma exacta de la respuesta de
  * `lines/info/<fecha>/` cuando haya credenciales; el mapeo es defensivo.
  */
+/** Texto blanco o negro según el brillo del fondo, para que el badge contraste. */
+function textoParaFondo(hex: string): string {
+  const c = hex.replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(c)) {
+    return 'FFFFFF';
+  }
+  const r = parseInt(c.slice(0, 2), 16);
+  const g = parseInt(c.slice(2, 4), 16);
+  const b = parseInt(c.slice(4, 6), 16);
+  // Luminancia relativa aproximada (ITU-R BT.601).
+  const luz = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luz > 0.6 ? '000000' : 'FFFFFF';
+}
+
+/**
+ * Listado de líneas. Se usa la v2 porque, además de los nombres, devuelve el
+ * `color` corporativo y el `order` oficial de cada línea.
+ */
 export async function getLineas(): Promise<Linea[]> {
-  const json = await apiGet(`/v1/transport/busemtmad/lines/info/${todayRef()}/`);
+  const json = await apiGet(`/v2/transport/busemtmad/lines/info/${todayRef()}/`);
   const arr: any[] = Array.isArray(json?.data) ? json.data : [];
   return arr
-    .map((l): Linea => {
+    .map((l, index): Linea => {
       const label = normalizeLabel(l?.label ?? l?.line);
       const nameA = String(l?.nameA ?? '').trim();
       const nameB = String(l?.nameB ?? '').trim();
-      // Numéricas primero y en orden; las de letra (C1, M3, N2...) después.
-      const num = Number(label);
+      const color = String(l?.color ?? '').replace('#', '').trim() || '1c5aa0';
       return {
         id: String(l?.line ?? label),
         lin: label,
         nombre: label,
         descripcion: [nameA, nameB].filter(Boolean).join(' - '),
-        colorFondo: '1c5aa0',
-        colorTexto: 'FFFFFF',
-        orden: Number.isFinite(num) ? num : 10000 + label.charCodeAt(0),
+        colorFondo: color,
+        colorTexto: textoParaFondo(color),
+        orden: toNumber(l?.order) ?? index,
       };
     })
     .filter((l) => l.lin)
-    // Unas pocas etiquetas se repiten (servicios especiales que reutilizan el
-    // número). A igualdad, primero la línea "canónica": aquella cuyo id interno
-    // coincide con su etiqueta (p.ej. id "001" para la línea 1).
-    .sort((a, b) => a.orden - b.orden || esCanonica(b) - esCanonica(a));
+    .sort((a, b) => a.orden - b.orden || a.lin.localeCompare(b.lin));
 }
 
 /**
