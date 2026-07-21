@@ -18,7 +18,9 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleDevelopmentRegion": "es",
-        "CFBundleLocalizations": ["es"],
+        "CFBundleLocalizations": [
+          "es"
+        ],
         "CFBundleAllowMixedLocalizations": true
       }
     },
@@ -41,6 +43,12 @@
           "locationWhenInUsePermission": "BusMadrid usa tu ubicación para mostrarte las paradas de autobús más cercanas."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f67fc9b8-044e-47ff-a2fe-db72b4c84fc4"
+      }
+    },
+    "owner": "jmortizsilva"
   }
 }
