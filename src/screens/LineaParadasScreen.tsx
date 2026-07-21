@@ -7,6 +7,7 @@ import { LineasStackParamList } from '../navigation/types';
 import { getHorariosLinea, getStopsLinea, HorarioLinea } from '../services/emt';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
+import { enlacesDeParada } from '../data/red';
 import { Parada } from '../types';
 import { parseLineasPaso } from '../utils/lineas';
 
@@ -67,18 +68,20 @@ export default function LineaParadasScreen() {
     ? [horarioHoy, ...horarios.filter((h) => h !== horarioHoy)]
     : horarios;
 
-  // Correspondencias de cada parada: las demás líneas que pasan por ella, con su
-  // recorrido para orientar. Se calcula con los datos ya cargados (sin peticiones).
-  const recorridoPorLinea = useMemo(
-    () => Object.fromEntries(lineas.map((l) => [l.lin, l.descripcion])),
-    [lineas]
-  );
+  // Correspondencias de cada parada, con el sentido real ("hacia Embajadores"),
+  // desde el índice de red precalculado. Si una parada no estuviera en el índice
+  // (red modificada desde que se generó), se cae a las líneas que dio la API.
   const enlacesDe = useCallback(
-    (parada: Parada): Enlace[] =>
-      parseLineasPaso(parada.lineasPaso, 40)
+    (parada: Parada): Enlace[] => {
+      const delIndice = enlacesDeParada(parada.stopCode, linea.lin);
+      if (delIndice.length > 0) {
+        return delIndice;
+      }
+      return parseLineasPaso(parada.lineasPaso, 40)
         .filter((lin) => lin !== linea.lin)
-        .map((lin) => ({ lin, recorrido: recorridoPorLinea[lin] })),
-    [recorridoPorLinea, linea.lin]
+        .map((lin) => ({ lin }));
+    },
+    [linea.lin]
   );
 
   const destino = paradas.length > 0 ? paradas[paradas.length - 1].stopName : undefined;
@@ -167,11 +170,11 @@ export default function LineaParadasScreen() {
 
 interface Enlace {
   lin: string;
-  recorrido?: string;
+  destino?: string;
 }
 
-/** Cuántos enlaces se detallan con su recorrido antes de resumir el resto. */
-const ENLACES_DETALLADOS = 4;
+/** Cuántos enlaces se detallan con su destino antes de resumir el resto. */
+const ENLACES_DETALLADOS = 5;
 
 /** Texto hablado de las correspondencias, evitando que sea interminable. */
 function hablarEnlaces(enlaces: Enlace[]): string {
@@ -180,10 +183,10 @@ function hablarEnlaces(enlaces: Enlace[]): string {
   }
   const detallados = enlaces
     .slice(0, ENLACES_DETALLADOS)
-    .map((e) => `línea ${e.lin}${e.recorrido ? `, ${e.recorrido}` : ''}`)
+    .map((e) => `línea ${e.lin}${e.destino ? ` hacia ${e.destino}` : ''}`)
     .join('; ');
   const resto = enlaces.slice(ENLACES_DETALLADOS);
-  const cola = resto.length > 0 ? `; y línea ${resto.map((e) => e.lin).join(', línea ')}` : '';
+  const cola = resto.length > 0 ? `; y ${resto.length} líneas más` : '';
   return ` Enlace con ${detallados}${cola}.`;
 }
 

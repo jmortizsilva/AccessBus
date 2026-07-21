@@ -3,6 +3,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Aviso, getLlegadas, getStopsAroundStop, NearbyResult } from '../services/emt';
+import { lineasDeParada } from '../data/red';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { Parada, Tiempo } from '../types';
@@ -95,7 +96,12 @@ export default function ParadaScreen() {
   }, [parada.stopCode]);
 
   const fav = isFavorite(parada.stopCode);
-  const lineasParada = parseLineasPaso(parada.lineasPaso, 40);
+  // Preferimos el índice precalculado, que además dice hacia dónde va cada línea.
+  const delIndice = lineasDeParada(parada.stopCode);
+  const lineasParada: { lin: string; destino?: string }[] =
+    delIndice.length > 0
+      ? delIndice
+      : parseLineasPaso(parada.lineasPaso, 40).map((lin) => ({ lin }));
 
   return (
     <ScrollView
@@ -199,16 +205,16 @@ export default function ParadaScreen() {
           <Text style={styles.sectionHeader} accessibilityRole="header">
             Líneas en esta parada
           </Text>
-          <View
-            style={styles.chips}
-            accessible
-            accessibilityLabel={`Líneas que pasan por esta parada: ${lineasParada
-              .map(prettyLinea)
-              .join(', ')}`}
-          >
-            {lineasParada.map((core) => (
-              <View key={core} style={styles.chip}>
-                <Text style={styles.chipText}>{core}</Text>
+          <View style={styles.card}>
+            {lineasParada.map((l, i) => (
+              <View
+                key={`${l.lin}-${i}`}
+                style={[styles.lineaRow, i < lineasParada.length - 1 && styles.divider]}
+                accessible
+                accessibilityLabel={`${prettyLinea(l.lin)}${l.destino ? ` hacia ${l.destino}` : ''}`}
+              >
+                <Text style={styles.lineaLin}>{l.lin}</Text>
+                {l.destino ? <Text style={styles.lineaDestino}>hacia {l.destino}</Text> : null}
               </View>
             ))}
           </View>
@@ -297,7 +303,9 @@ const styles = StyleSheet.create({
   timeRight: { alignItems: 'flex-end' },
   timeMin: { color: theme.primary, fontSize: 17, fontWeight: '700' },
   timeDist: { color: theme.textMuted, fontSize: 13 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  lineaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 40, paddingVertical: 8, paddingHorizontal: 16 },
+  lineaLin: { color: theme.primary, fontSize: 16, fontWeight: '800', minWidth: 46 },
+  lineaDestino: { color: theme.text, fontSize: 15, flexShrink: 1 },
   chip: {
     backgroundColor: theme.card,
     borderRadius: 8,
