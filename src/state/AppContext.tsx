@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Alert } from 'react-native';
-import { DiaServicio, getDiaServicio, getLineas, getStopsAround, NearbyResult } from '../services/emt';
+import { AccessibilityInfo, Alert, AppState } from 'react-native';
+import { DiaServicio, getAvisosLinea, getDiaServicio, getLineas, getStopsAround, NearbyResult } from '../services/emt';
+import { asegurarPermisoNotificaciones, avisar } from '../services/notificaciones';
 import { Linea, Parada } from '../types';
 
 const STORAGE_FAVORITES = 'busmadrid.favorites.v1';
@@ -10,11 +11,19 @@ const STORAGE_LINEAS = 'busmadrid.lineas.v1';
 const STORAGE_LINEAS_TS = 'busmadrid.lineas.ts.v1';
 const STORAGE_LOCATION = 'busmadrid.location.v1';
 const STORAGE_RADIUS = 'busmadrid.radius.v1';
+const STORAGE_FAV_LINEAS = 'busmadrid.favlineas.v1';
+const STORAGE_AVISOS_VISTOS = 'busmadrid.avisosvistos.v1';
+const STORAGE_NOTIF = 'busmadrid.notificaciones.v1';
+const STORAGE_UMBRAL = 'busmadrid.umbral.v1';
 
 const STATIC_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const RADIUS_OPTIONS = [300, 500, 1000, 1500, 2000, 3000];
 export const DEFAULT_RADIUS = 500;
+
+/** Minutos de antelación para avisar de que el autobús está llegando. */
+export const UMBRAL_OPTIONS = [2, 3, 5, 10];
+export const DEFAULT_UMBRAL = 3;
 
 export interface CurrentLocation {
   lat: number;
@@ -41,6 +50,14 @@ interface AppContextValue {
   isFavorite: (stopCode: string) => boolean;
   addFavorite: (parada: Parada) => Promise<void>;
   removeFavorite: (stopCode: string) => Promise<void>;
+  /** Líneas que el usuario sigue, para recibir avisos de incidencias. */
+  favoriteLineas: string[];
+  isFavoriteLinea: (lin: string) => boolean;
+  toggleFavoriteLinea: (lin: string) => Promise<void>;
+  notificacionesActivas: boolean;
+  setNotificacionesActivas: (activas: boolean) => Promise<void>;
+  umbralMin: number;
+  setUmbralMin: (min: number) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);
@@ -52,6 +69,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [diaServicio, setDiaServicio] = useState<DiaServicio | undefined>(undefined);
   const [searchRadiusM, setSearchRadiusState] = useState<number>(DEFAULT_RADIUS);
   const [nearby, setNearby] = useState<NearbyStop[]>([]);
+  const [favoriteLineas, setFavoriteLineas] = useState<string[]>([]);
+  const [notificacionesActivas, setNotifState] = useState(false);
+  const [umbralMin, setUmbralState] = useState<number>(DEFAULT_UMBRAL);
   const [loadingLineas, setLoadingLineas] = useState(false);
   const [loadingNearby, setLoadingNearby] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
@@ -63,14 +83,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Carga inicial desde caché.
   useEffect(() => {
     const load = async () => {
-      const [favRaw, lineasRaw, locRaw, radiusRaw] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_FAVORITES),
-        AsyncStorage.getItem(STORAGE_LINEAS),
-        AsyncStorage.getItem(STORAGE_LOCATION),
-        AsyncStorage.getItem(STORAGE_RADIUS),
-      ]);
+      const [favRaw, lineasRaw, locRaw, radiusRaw, favLinRaw, notifRaw, umbralRaw] =
+        await Promise.all([
+          AsyncStorage.getItem(STORAGE_FAVORITES),
+          AsyncStorage.getItem(STORAGE_LINEAS),
+          AsyncStorage.getItem(STORAGE_LOCATION),
+          AsyncStorage.getItem(STORAGE_RADIUS),
+          AsyncStorage.getItem(STORAGE_FAV_LINEAS),
+          AsyncStorage.getItem(STORAGE_NOTIF),
+          AsyncStorage.getItem(STORAGE_UMBRAL),
+        ]);
       parseInto(favRaw, setFavorites);
       parseInto(lineasRaw, setLineas);
+      parseInto(favLinRaw, setFavoriteLineas);
+      setNotifState(notifRaw === 'true');
+      const umbral = Number(umbralRaw);
+      if (Number.isFinite(umbral) && umbral > 0) {
+        setUmbralState(umbral);
+      }
       if (locRaw) {
         try {
           const parsed = JSON.parse(locRaw) as CurrentLocation;
@@ -248,6 +278,87 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [favorites, persistFavorites]
   );
 
+  const isFavoriteLinea = useCallback(
+    (lin: string) => favoriteLineas.includes(lin),
+    [favoriteLineas]
+  );
+
+  const toggleFavoriteLinea = useCallback(
+    async (lin: string) => {
+      const sigue = favoriteLineas.includes(lin);
+      const next = sigue ? favoriteLineas.filter((l) => l !== lin) : [...favoriteLineas, lin];
+      setFavoriteLineas(next);
+      await AsyncStorage.setItem(STORAGE_FAV_LINEAS, JSON.stringify(next));
+      setMessage(sigue ? `Ya no sigues la línea ${lin}.` : `Siguiendo la línea ${lin}.`);
+    },
+    [favoriteLineas]
+  );
+
+  const setNotificacionesActivas = useCallback(async (activas: boolean) => {
+    if (activas) {
+      const ok = await asegurarPermisoNotificaciones();
+      if (!ok) {
+        setMessage('No se han concedido los permisos de notificaciones.');
+        return;
+      }
+    }
+    setNotifState(activas);
+    await AsyncStorage.setItem(STORAGE_NOTIF, String(activas));
+  }, []);
+
+  const setUmbralMin = useCallback(async (min: number) => {
+    setUmbralState(min);
+    await AsyncStorage.setItem(STORAGE_UMBRAL, String(min));
+  }, []);
+
+  /**
+   * Comprueba las incidencias de las líneas seguidas y notifica solo las nuevas.
+   * La primera vez marca las existentes como vistas sin avisar, para no soltar
+   * una ráfaga de notificaciones al activar la función.
+   */
+  const comprobarAvisosLineas = useCallback(async () => {
+    if (!notificacionesActivas || favoriteLineas.length === 0) {
+      return;
+    }
+    if (!(await asegurarPermisoNotificaciones())) {
+      return;
+    }
+    const raw = await AsyncStorage.getItem(STORAGE_AVISOS_VISTOS);
+    const primeraVez = raw === null;
+    const vistos = new Set<string>(raw ? (JSON.parse(raw) as string[]) : []);
+
+    for (const lin of favoriteLineas) {
+      try {
+        const avisos = await getAvisosLinea(lin);
+        for (const a of avisos) {
+          const id = a.guid ?? `${lin}:${a.titulo}`;
+          if (vistos.has(id)) {
+            continue;
+          }
+          vistos.add(id);
+          if (!primeraVez) {
+            await avisar(`Aviso en la línea ${lin}`, a.titulo);
+          }
+        }
+      } catch {
+        // una línea que falle no debe impedir las demás
+      }
+    }
+    // Conservamos solo los últimos ids para que no crezca sin control.
+    await AsyncStorage.setItem(STORAGE_AVISOS_VISTOS, JSON.stringify([...vistos].slice(-300)));
+  }, [notificacionesActivas, favoriteLineas]);
+
+  // Comprueba al arrancar y cada vez que la app vuelve a primer plano.
+  useEffect(() => {
+    void comprobarAvisosLineas();
+    const sub = AppState.addEventListener('change', (estado) => {
+      if (estado === 'active') {
+        void comprobarAvisosLineas();
+      }
+    });
+    return () => sub.remove();
+  }, [comprobarAvisosLineas]);
+
   const value = useMemo<AppContextValue>(
     () => ({
       lineas,
@@ -266,6 +377,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isFavorite,
       addFavorite,
       removeFavorite,
+      favoriteLineas,
+      isFavoriteLinea,
+      toggleFavoriteLinea,
+      notificacionesActivas,
+      setNotificacionesActivas,
+      umbralMin,
+      setUmbralMin,
     }),
     [
       lineas,
@@ -284,6 +402,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isFavorite,
       addFavorite,
       removeFavorite,
+      favoriteLineas,
+      isFavoriteLinea,
+      toggleFavoriteLinea,
+      notificacionesActivas,
+      setNotificacionesActivas,
+      umbralMin,
+      setUmbralMin,
     ]
   );
 

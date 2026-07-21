@@ -3,6 +3,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Aviso, getLlegadas, getStopsAroundStop, NearbyResult } from '../services/emt';
+import { asegurarPermisoNotificaciones, avisar } from '../services/notificaciones';
 import { lineasDeParada } from '../data/red';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
@@ -15,12 +16,13 @@ type ParadaParams = { Parada: { parada: Parada } };
 type Nav = NativeStackNavigationProp<{ Parada: { parada: Parada } }>;
 
 const AUTO_REFRESH_MS = 30_000;
+const VIGILANCIA_MS = 20_000;
 const CERCANAS_RADIO = 300;
 
 export default function ParadaScreen() {
   const route = useRoute<RouteProp<ParadaParams, 'Parada'>>();
   const navigation = useNavigation<Nav>();
-  const { isFavorite, addFavorite, removeFavorite } = useApp();
+  const { isFavorite, addFavorite, removeFavorite, umbralMin } = useApp();
 
   const [parada, setParada] = useState<Parada>(route.params.parada);
   const [times, setTimes] = useState<Tiempo[]>([]);
@@ -28,7 +30,13 @@ export default function ParadaScreen() {
   const [cercanas, setCercanas] = useState<NearbyResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [vigilando, setVigilando] = useState(false);
   const mounted = useRef(true);
+  // Líneas ya avisadas en esta sesión de vigilancia, para no repetir el aviso
+  // en cada refresco mientras el autobús sigue por debajo del umbral.
+  const avisadas = useRef<Set<string>>(new Set());
+  const vigilandoRef = useRef(false);
+  vigilandoRef.current = vigilando;
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: '' });
@@ -52,6 +60,25 @@ export default function ParadaScreen() {
         setTimes(tiempos);
         setAvisos(nuevos);
         setError('');
+
+        // Vigilancia: avisa cuando una línea baja del umbral configurado.
+        if (vigilandoRef.current) {
+          for (const t of tiempos) {
+            if (t.minutos === undefined || t.minutos > umbralMin) {
+              avisadas.current.delete(t.linea);
+              continue;
+            }
+            if (avisadas.current.has(t.linea)) {
+              continue;
+            }
+            avisadas.current.add(t.linea);
+            void avisar(
+              `Línea ${t.linea} llegando`,
+              `${parada.stopName}: ${t.minutos <= 0 ? 'está en la parada' : `llega en ${t.minutos} min`}` +
+                (t.destino ? `, hacia ${t.destino}` : '')
+            );
+          }
+        }
         if (info) {
           setParada((prev) => ({
             ...prev,
@@ -69,18 +96,19 @@ export default function ParadaScreen() {
         }
       }
     },
-    [parada.stopCode]
+    [parada.stopCode, parada.stopName, umbralMin]
   );
 
+  // Mientras se vigila conviene refrescar más a menudo.
   useEffect(() => {
     mounted.current = true;
     void load(false);
-    const timer = setInterval(() => void load(true), AUTO_REFRESH_MS);
+    const timer = setInterval(() => void load(true), vigilando ? VIGILANCIA_MS : AUTO_REFRESH_MS);
     return () => {
       mounted.current = false;
       clearInterval(timer);
     };
-  }, [load]);
+  }, [load, vigilando]);
 
   // Otras paradas alrededor de esta (para caminar a una alternativa).
   useEffect(() => {
@@ -134,6 +162,34 @@ export default function ParadaScreen() {
           <Text style={styles.secondaryText}>{fav ? '★ En favoritos' : '☆ Favorito'}</Text>
         </Pressable>
       </View>
+
+      <Pressable
+        style={[styles.vigilarButton, vigilando && styles.vigilarActivo]}
+        onPress={async () => {
+          if (!vigilando && !(await asegurarPermisoNotificaciones())) {
+            return;
+          }
+          avisadas.current.clear();
+          setVigilando((v) => !v);
+        }}
+        accessibilityRole="button"
+        accessibilityState={{ selected: vigilando }}
+        accessibilityLabel={vigilando ? 'Dejar de vigilar esta parada' : 'Vigilar esta parada'}
+        accessibilityHint={
+          vigilando
+            ? 'Se te está avisando cuando un autobús llega'
+            : `Te avisará cuando un autobús esté a ${umbralMin} minutos o menos, con la app abierta`
+        }
+      >
+        <Text style={styles.vigilarText}>
+          {vigilando ? `🔔 Vigilando (aviso a ${umbralMin} min)` : '🔕 Vigilar esta parada'}
+        </Text>
+      </Pressable>
+      {vigilando ? (
+        <Text style={styles.note}>
+          Mantén la app abierta. Te avisaré en cuanto una línea esté a {umbralMin} minutos o menos.
+        </Text>
+      ) : null}
 
       {avisos.length > 0 && (
         <View style={styles.avisoBox}>
@@ -271,6 +327,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   favActive: { backgroundColor: theme.primaryDark, borderColor: theme.primary },
+  vigilarButton: { borderRadius: 12, backgroundColor: theme.card, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.border, minHeight: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 12 },
+  vigilarActivo: { backgroundColor: theme.primaryDark, borderColor: theme.primary },
+  vigilarText: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
   secondaryText: { color: theme.text, fontSize: 15, fontWeight: '600' },
   avisoBox: {
     backgroundColor: theme.card,

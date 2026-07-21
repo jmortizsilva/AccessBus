@@ -315,6 +315,8 @@ export interface Aviso {
   descripcion?: string;
   desde?: Date;
   hasta?: Date;
+  /** Identificador estable del aviso; sirve para no notificarlo dos veces. */
+  guid?: string;
 }
 
 /** Parsea las fechas de los avisos, que vienen como "24/07/2026 21:00:00". */
@@ -343,6 +345,45 @@ function stripHtml(value: unknown): string {
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Convierte incidencias de la API a avisos, quedándose solo con los VIGENTES.
+ * La API devuelve muchas incidencias programadas para días futuros; mostrarlas
+ * todas haría inservible la pantalla.
+ */
+function mapAvisosVigentes(incidencias: any[]): Aviso[] {
+  const ahora = Date.now();
+  return incidencias
+    .map((i): Aviso => ({
+      titulo: stripHtml(i?.title),
+      descripcion: stripHtml(i?.description) || undefined,
+      desde: parseFechaEs(i?.rssFrom),
+      hasta: parseFechaEs(i?.rssTo),
+      guid: String(i?.guid ?? '').trim() || undefined,
+    }))
+    .filter((a) => {
+      if (!a.titulo) {
+        return false;
+      }
+      if (a.desde && ahora < a.desde.getTime()) {
+        return false;
+      }
+      if (a.hasta && ahora > a.hasta.getTime()) {
+        return false;
+      }
+      return true;
+    });
+}
+
+/** Incidencias vigentes de una línea concreta (la API sí filtra por línea). */
+export async function getAvisosLinea(lin: string): Promise<Aviso[]> {
+  const json = await apiGet(
+    `/v1/transport/busemtmad/lines/incidents/${encodeURIComponent(lin)}/`
+  );
+  const d = json?.data?.[0];
+  const items: any[] = Array.isArray(d?.ListaIncident?.data) ? d.ListaIncident.data : [];
+  return mapAvisosVigentes(items);
 }
 
 /**
@@ -390,26 +431,7 @@ export async function getLlegadas(
   // La API devuelve TODAS las incidencias de la red (una veintena), muchas
   // programadas para días futuros. Nos quedamos solo con las vigentes ahora
   // mismo; si no, la pantalla de parada se llenaría de avisos irrelevantes.
-  const ahora = Date.now();
-  const avisos: Aviso[] = incidencias
-    .map((i): Aviso => ({
-      titulo: stripHtml(i?.title),
-      descripcion: stripHtml(i?.description) || undefined,
-      desde: parseFechaEs(i?.rssFrom),
-      hasta: parseFechaEs(i?.rssTo),
-    }))
-    .filter((a) => {
-      if (!a.titulo) {
-        return false;
-      }
-      if (a.desde && ahora < a.desde.getTime()) {
-        return false;
-      }
-      if (a.hasta && ahora > a.hasta.getTime()) {
-        return false;
-      }
-      return true;
-    });
+  const avisos = mapAvisosVigentes(incidencias);
 
   const stopInfo = bloque?.StopInfo?.[0];
   const info = stopInfo

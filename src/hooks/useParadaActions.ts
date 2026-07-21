@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
-import { AccessibilityActionEvent, AccessibilityActionInfo } from 'react-native';
+import { AccessibilityActionEvent, AccessibilityActionInfo, AccessibilityInfo } from 'react-native';
+import { lineasDeParada } from '../data/red';
 import { useApp } from '../state/AppContext';
 import { Parada } from '../types';
 import { announceTiempoLinea, parseLineasPaso, prettyLinea } from '../utils/lineas';
@@ -28,6 +29,21 @@ export function useParadaActions(parada: Parada, onOpen: () => void) {
       actions.push({ name, label: name });
       map.set(name, () => void announceTiempoLinea(parada, core));
     });
+
+    // Lectura completa de las correspondencias: en paradas con muchas líneas
+    // (Cibeles tiene 20) la etiqueta se resume, así que esta acción permite
+    // escucharlas todas con su destino sin entrar en la parada.
+    const enlaces = lineasDeParada(parada.stopCode);
+    if (enlaces.length > 0) {
+      const nombre = `Líneas de la parada (${enlaces.length})`;
+      actions.push({ name: nombre, label: nombre });
+      map.set(nombre, () => {
+        const texto = enlaces
+          .map((e) => `${prettyLinea(e.lin)} hacia ${e.destino}`)
+          .join('. ');
+        AccessibilityInfo.announceForAccessibility(`${parada.stopName}. ${texto}`);
+      });
+    }
 
     const favName = fav ? 'Quitar de favoritos' : 'Añadir a favoritos';
     actions.push({ name: favName, label: favName });

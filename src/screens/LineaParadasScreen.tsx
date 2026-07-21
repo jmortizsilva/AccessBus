@@ -17,7 +17,7 @@ export default function LineaParadasScreen() {
   const route = useRoute<RouteProp<LineasStackParamList, 'LineaParadas'>>();
   const navigation = useNavigation<Nav>();
   const { linea } = route.params;
-  const { lineas, diaServicio } = useApp();
+  const { lineas, diaServicio, isFavoriteLinea, toggleFavoriteLinea } = useApp();
   const [horarios, setHorarios] = useState<HorarioLinea[]>([]);
 
   // Las paradas traen IDs internos de línea; este mapa los traduce a etiquetas
@@ -95,6 +95,23 @@ export default function LineaParadasScreen() {
       <Text style={styles.header} accessibilityRole="header">
         {linea.descripcion || `Línea ${linea.lin}`}
       </Text>
+
+      <Pressable
+        style={[styles.seguirButton, isFavoriteLinea(linea.lin) && styles.seguirActivo]}
+        onPress={() => void toggleFavoriteLinea(linea.lin)}
+        accessibilityRole="button"
+        accessibilityState={{ selected: isFavoriteLinea(linea.lin) }}
+        accessibilityLabel={
+          isFavoriteLinea(linea.lin)
+            ? `Dejar de seguir la línea ${linea.lin}`
+            : `Seguir la línea ${linea.lin}`
+        }
+        accessibilityHint="Las líneas seguidas te avisan de sus incidencias"
+      >
+        <Text style={styles.seguirText}>
+          {isFavoriteLinea(linea.lin) ? '🔔 Siguiendo esta línea' : '🔕 Seguir esta línea'}
+        </Text>
+      </Pressable>
 
       <Pressable
         style={styles.sentidoButton}
@@ -248,6 +265,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   sentidoText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
+  seguirButton: { borderRadius: 12, backgroundColor: theme.card, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.border, minHeight: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 12 },
+  seguirActivo: { backgroundColor: theme.primaryDark, borderColor: theme.primary },
+  seguirText: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
   horarioBox: {
     backgroundColor: theme.card,
     borderRadius: 12,

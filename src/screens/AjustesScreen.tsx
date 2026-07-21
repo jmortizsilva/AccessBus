@@ -1,12 +1,20 @@
 import Constants from 'expo-constants';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Pressable } from 'react-native';
-import { DEFAULT_RADIUS, RADIUS_OPTIONS, useApp } from '../state/AppContext';
+import { DEFAULT_RADIUS, RADIUS_OPTIONS, UMBRAL_OPTIONS, useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { formatDistance } from '../utils/distance';
 
 export default function AjustesScreen() {
-  const { searchRadiusM, setSearchRadiusM } = useApp();
+  const {
+    searchRadiusM,
+    setSearchRadiusM,
+    notificacionesActivas,
+    setNotificacionesActivas,
+    umbralMin,
+    setUmbralMin,
+    favoriteLineas,
+  } = useApp();
   const version = Constants.expoConfig?.version ?? '1.0.0';
 
   return (
@@ -38,6 +46,63 @@ export default function AjustesScreen() {
               accessibilityHint="Toca dos veces para usar este radio de búsqueda"
             >
               <Text style={styles.rowText}>{formatDistance(meters)}</Text>
+              <Text style={styles.check}>{selected ? '✓' : ''}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Text style={styles.sectionHeader} accessibilityRole="header">
+        Notificaciones
+      </Text>
+      <View style={styles.card}>
+        <Pressable
+          style={[styles.row, styles.divider, notificacionesActivas && styles.rowSelected]}
+          onPress={() => void setNotificacionesActivas(!notificacionesActivas)}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: notificacionesActivas }}
+          accessibilityLabel="Avisos de las líneas que sigo"
+          accessibilityHint="Te avisa cuando hay una incidencia en una línea que sigues"
+        >
+          <Text style={styles.rowText}>Avisos de líneas seguidas</Text>
+          <Text style={styles.check}>{notificacionesActivas ? 'Sí' : 'No'}</Text>
+        </Pressable>
+        <View
+          style={styles.row}
+          accessible
+          accessibilityLabel={
+            favoriteLineas.length === 0
+              ? 'No sigues ninguna línea. Puedes seguirlas desde la pantalla de cada línea.'
+              : `Líneas seguidas: ${favoriteLineas.join(', ')}`
+          }
+        >
+          <Text style={styles.rowText}>Líneas seguidas</Text>
+          <Text style={styles.value}>
+            {favoriteLineas.length === 0 ? 'ninguna' : favoriteLineas.join(', ')}
+          </Text>
+        </View>
+      </View>
+
+      <Text style={styles.sectionHeader} accessibilityRole="header">
+        Aviso de llegada
+      </Text>
+      <Text style={styles.note}>
+        Al vigilar una parada, se te avisa cuando un autobús está a esta antelación.
+      </Text>
+      <View style={styles.card}>
+        {UMBRAL_OPTIONS.map((min, i) => {
+          const selected = min === umbralMin;
+          return (
+            <Pressable
+              key={min}
+              style={[styles.row, i < UMBRAL_OPTIONS.length - 1 && styles.divider, selected && styles.rowSelected]}
+              onPress={() => void setUmbralMin(min)}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              accessibilityLabel={`${min} minutos`}
+              accessibilityHint="Toca dos veces para usar esta antelación"
+            >
+              <Text style={styles.rowText}>{min} minutos</Text>
               <Text style={styles.check}>{selected ? '✓' : ''}</Text>
             </Pressable>
           );
