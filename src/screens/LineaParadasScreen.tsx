@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useParadaActions } from '../hooks/useParadaActions';
 import { LineasStackParamList } from '../navigation/types';
-import { getStopsLinea } from '../services/emt';
+import { getHorariosLinea, getStopsLinea, HorarioLinea } from '../services/emt';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { Parada } from '../types';
@@ -15,7 +15,8 @@ export default function LineaParadasScreen() {
   const route = useRoute<RouteProp<LineasStackParamList, 'LineaParadas'>>();
   const navigation = useNavigation<Nav>();
   const { linea } = route.params;
-  const { lineas } = useApp();
+  const { lineas, diaServicio } = useApp();
+  const [horarios, setHorarios] = useState<HorarioLinea[]>([]);
 
   // Las paradas traen IDs internos de línea; este mapa los traduce a etiquetas
   // públicas para que las acciones de rotor puedan consultar cada línea.
@@ -46,6 +47,25 @@ export default function LineaParadasScreen() {
     };
   }, [linea.id, sentido, labelById]);
 
+  // Horarios y frecuencias de la línea (el endpoint espera la etiqueta, no el id).
+  useEffect(() => {
+    let active = true;
+    getHorariosLinea(linea.lin)
+      .then((h) => active && setHorarios(h))
+      .catch(() => {
+        // no crítico
+      });
+    return () => {
+      active = false;
+    };
+  }, [linea.lin]);
+
+  // Muestra primero el horario del tipo de día de hoy, si lo sabemos.
+  const horarioHoy = horarios.find((h) => h.dayType === diaServicio?.dayType);
+  const horariosOrdenados = horarioHoy
+    ? [horarioHoy, ...horarios.filter((h) => h !== horarioHoy)]
+    : horarios;
+
   const destino = paradas.length > 0 ? paradas[paradas.length - 1].stopName : undefined;
 
   return (
@@ -70,6 +90,41 @@ export default function LineaParadasScreen() {
           {destino ? ` · hacia ${destino}` : ''}
         </Text>
       </Pressable>
+
+      {horariosOrdenados.length > 0 && (
+        <View style={styles.horarioBox}>
+          <Text style={styles.horarioHeader} accessibilityRole="header">
+            Horarios y frecuencias
+          </Text>
+          {horariosOrdenados.map((h) => (
+            <View key={h.dayType} style={styles.horarioDia}>
+              <Text style={styles.horarioDiaTitulo}>
+                {h.etiqueta}
+                {h.dayType === diaServicio?.dayType ? ' (hoy)' : ''}
+              </Text>
+              {([1, 2] as const).map((s) => {
+                const f = s === 1 ? h.sentido1 : h.sentido2;
+                if (!f) {
+                  return null;
+                }
+                const detalle =
+                  f.texto ??
+                  `De ${f.inicio} a ${f.fin}` +
+                    (f.frecMin ? ` · cada ${f.frecMin}-${f.frecMax} min` : '');
+                return (
+                  <Text
+                    key={s}
+                    style={styles.horarioTexto}
+                    accessibilityLabel={`${h.etiqueta}, sentido ${s}: ${detalle}`}
+                  >
+                    Sentido {s}: {detalle}
+                  </Text>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      )}
 
       {loading && <ActivityIndicator color={theme.primary} accessibilityLabel="Cargando paradas" />}
       {!loading && error ? <Text style={styles.note}>Error: {error}</Text> : null}
@@ -143,6 +198,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   sentidoText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
+  horarioBox: {
+    backgroundColor: theme.card,
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
+  horarioHeader: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
+  horarioDia: { gap: 2 },
+  horarioDiaTitulo: { color: theme.primary, fontSize: 14, fontWeight: '700' },
+  horarioTexto: { color: theme.text, fontSize: 14, lineHeight: 19 },
   card: { backgroundColor: theme.card, borderRadius: 16, overflow: 'hidden' },
   note: { color: theme.textMuted, fontSize: 15 },
   row: {

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert } from 'react-native';
-import { getLineas, getStopsAround, NearbyResult } from '../services/emt';
+import { DiaServicio, getDiaServicio, getLineas, getStopsAround, NearbyResult } from '../services/emt';
 import { Linea, Parada } from '../types';
 
 const STORAGE_FAVORITES = 'busmadrid.favorites.v1';
@@ -28,6 +28,7 @@ interface AppContextValue {
   lineas: Linea[];
   favorites: Parada[];
   currentLocation: CurrentLocation | undefined;
+  diaServicio: DiaServicio | undefined;
   searchRadiusM: number;
   nearby: NearbyStop[];
   loadingLineas: boolean;
@@ -48,6 +49,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [favorites, setFavorites] = useState<Parada[]>([]);
   const [currentLocation, setCurrentLocation] = useState<CurrentLocation | undefined>(undefined);
+  const [diaServicio, setDiaServicio] = useState<DiaServicio | undefined>(undefined);
   const [searchRadiusM, setSearchRadiusState] = useState<number>(DEFAULT_RADIUS);
   const [nearby, setNearby] = useState<NearbyStop[]>([]);
   const [loadingLineas, setLoadingLineas] = useState(false);
@@ -94,6 +96,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       void AccessibilityInfo.announceForAccessibility(message);
     }
   }, [message]);
+
+  // Tipo de día de servicio (laborable/sábado/festivo) y aviso de huelga.
+  useEffect(() => {
+    let active = true;
+    getDiaServicio()
+      .then((dia) => active && dia && setDiaServicio(dia))
+      .catch(() => {
+        // no crítico
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Paradas cercanas: se recalculan (llamada a la API) al cambiar ubicación o radio.
   useEffect(() => {
@@ -238,6 +253,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lineas,
       favorites,
       currentLocation,
+      diaServicio,
       searchRadiusM,
       nearby,
       loadingLineas,
@@ -255,6 +271,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       lineas,
       favorites,
       currentLocation,
+      diaServicio,
       searchRadiusM,
       nearby,
       loadingLineas,

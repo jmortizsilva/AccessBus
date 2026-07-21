@@ -1,6 +1,6 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -14,6 +14,7 @@ import { LineasStackParamList } from '../navigation/types';
 import { useApp } from '../state/AppContext';
 import { hexColor, theme } from '../theme';
 import { Linea } from '../types';
+import { normalizeText } from '../utils/text';
 
 type Nav = NativeStackNavigationProp<LineasStackParamList, 'LineasList'>;
 
@@ -28,9 +29,16 @@ export default function LineasListScreen() {
     }, [refreshLineas])
   );
 
-  const q = query.trim();
-  // La API de EMT no busca paradas por nombre; sí por número de parada exacto.
-  const isCode = /^\d+$/.test(q);
+  // Filtro por número de línea o por destino (son 236 líneas).
+  const filtradas = useMemo(() => {
+    const q = normalizeText(query);
+    if (!q) {
+      return lineas;
+    }
+    return lineas.filter(
+      (l) => normalizeText(l.lin).includes(q) || normalizeText(l.descripcion).includes(q)
+    );
+  }, [lineas, query]);
 
   return (
     <ScrollView
@@ -45,62 +53,42 @@ export default function LineasListScreen() {
       <TextInput
         value={query}
         onChangeText={setQuery}
-        placeholder="Número de parada"
+        placeholder="Filtrar por número o destino"
         placeholderTextColor={theme.textMuted}
         style={styles.input}
-        keyboardType="number-pad"
-        accessibilityLabel="Buscar parada por número"
-        accessibilityHint="Escribe el número de una parada para consultarla"
+        accessibilityLabel="Filtrar líneas"
+        accessibilityHint="Escribe el número de una línea o parte de su destino"
+        autoCorrect={false}
       />
 
-      {q.length > 0 && !isCode && (
-        <Text style={styles.note}>Escribe el número exacto de la parada.</Text>
+      {loadingLineas && lineas.length === 0 && (
+        <ActivityIndicator color={theme.primary} accessibilityLabel="Cargando líneas" />
+      )}
+      {!loadingLineas && lineas.length === 0 && (
+        <Text style={styles.note}>No se han podido cargar las líneas. Comprueba tu conexión.</Text>
       )}
 
-      {isCode && (
+      {lineas.length > 0 && (
+        <Text style={styles.count} accessibilityLabel={`${filtradas.length} líneas`}>
+          {filtradas.length} {filtradas.length === 1 ? 'línea' : 'líneas'}
+        </Text>
+      )}
+
+      {filtradas.length === 0 && lineas.length > 0 ? (
+        <Text style={styles.note}>Ninguna línea coincide con "{query.trim()}".</Text>
+      ) : null}
+
+      {filtradas.length > 0 && (
         <View style={styles.card}>
-          <Pressable
-            style={styles.row}
-            onPress={() =>
-              navigation.navigate('Parada', {
-                parada: { stopCode: q, stopName: `Parada ${q}` },
-              })
-            }
-            accessibilityRole="button"
-            accessibilityLabel={`Consultar parada ${q}`}
-            accessibilityHint="Toca dos veces para ver sus tiempos de paso"
-          >
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>Consultar parada {q}</Text>
-              <Text style={styles.rowDesc}>Ver tiempos de paso en tiempo real</Text>
-            </View>
-          </Pressable>
+          {filtradas.map((linea, i) => (
+            <LineaRow
+              key={`${linea.id}-${linea.lin}`}
+              linea={linea}
+              isLast={i === filtradas.length - 1}
+              onPress={() => navigation.navigate('LineaParadas', { linea })}
+            />
+          ))}
         </View>
-      )}
-
-      {q.length === 0 && (
-        <>
-          {loadingLineas && lineas.length === 0 && (
-            <ActivityIndicator color={theme.primary} accessibilityLabel="Cargando líneas" />
-          )}
-          {!loadingLineas && lineas.length === 0 && (
-            <Text style={styles.note}>
-              Aún no hay líneas. Se cargarán al conectar con la API de EMT (requiere credenciales).
-            </Text>
-          )}
-          {lineas.length > 0 && (
-            <View style={styles.card}>
-              {lineas.map((linea, i) => (
-                <LineaRow
-                  key={linea.id}
-                  linea={linea}
-                  isLast={i === lineas.length - 1}
-                  onPress={() => navigation.navigate('LineaParadas', { linea })}
-                />
-              ))}
-            </View>
-          )}
-        </>
       )}
     </ScrollView>
   );
@@ -141,6 +129,7 @@ const styles = StyleSheet.create({
     color: theme.textStrong,
     backgroundColor: theme.card,
   },
+  count: { color: theme.textMuted, fontSize: 13 },
   card: { backgroundColor: theme.card, borderRadius: 16, overflow: 'hidden' },
   note: { color: theme.textMuted, fontSize: 15 },
   row: {
@@ -153,14 +142,14 @@ const styles = StyleSheet.create({
   },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
   badge: {
-    minWidth: 46,
+    minWidth: 52,
     height: 46,
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 6,
   },
-  badgeText: { fontSize: 18, fontWeight: '800' },
+  badgeText: { fontSize: 17, fontWeight: '800' },
   rowText: { flex: 1, gap: 2 },
   rowTitle: { color: theme.textStrong, fontSize: 17, fontWeight: '600' },
   rowDesc: { color: theme.textMuted, fontSize: 14 },

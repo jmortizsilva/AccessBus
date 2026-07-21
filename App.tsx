@@ -1,6 +1,7 @@
 import { createNativeBottomTabNavigator } from '@bottom-tabs/react-navigation';
 import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
+import BuscarStack from './src/navigation/BuscarStack';
 import InicioStack from './src/navigation/InicioStack';
 import LineasStack from './src/navigation/LineasStack';
 import { TabParamList } from './src/navigation/types';
@@ -46,6 +47,15 @@ export default function App() {
             options={{
               tabBarLabel: 'Líneas',
               tabBarIcon: () => ({ sfSymbol: 'bus.fill' }),
+            }}
+          />
+          <Tab.Screen
+            name="Buscar"
+            component={BuscarStack}
+            options={{
+              tabBarLabel: 'Buscar',
+              tabBarIcon: () => ({ sfSymbol: 'magnifyingglass' }),
+              role: 'search',
             }}
           />
           <Tab.Screen

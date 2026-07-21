@@ -22,8 +22,15 @@ Esqueleto funcional que **compila y empaqueta** (typecheck + bundle iOS OK). Fal
   defensivo— líneas y paradas de línea.
 - Estado [`src/state/AppContext.tsx`](src/state/AppContext.tsx): favoritos, ubicación,
   radio de búsqueda configurable y cercanas resueltas por la API.
-- Pantallas: Inicio (favoritas + cercanas), Líneas (+ consulta por número de parada),
-  detalle de parada (pantalla con atrás nativo de iOS) y Ajustes.
+- Pantallas (4 pestañas):
+  - **Inicio**: favoritas + cercanas, con banner del **tipo de día de servicio** y
+    aviso de **huelga** convocada.
+  - **Líneas**: listado con **buscador** (por número o destino), y dentro de cada
+    línea sus paradas por sentido más sus **horarios y frecuencias** por tipo de día.
+  - **Buscar**: paradas por **nombre de calle** o por número exacto de parada.
+  - **Ajustes**: radio de cercanas y versión.
+- Detalle de parada (pantalla con atrás nativo de iOS): tiempos en vivo, **avisos
+  vigentes**, **líneas que pasan por la parada** y **otras paradas cerca**.
 
 ### Accesibilidad (VoiceOver)
 - Pestañas nativas reales (`react-native-bottom-tabs`).

@@ -177,6 +177,123 @@ export async function getStopsAround(
   }));
 }
 
+/** Mapea la estructura de paradas que comparten `arroundxy` y `arroundstreet`. */
+function mapNearby(arr: any[]): NearbyResult[] {
+  return arr.map((s) => ({
+    parada: {
+      stopCode: String(s?.stopId ?? ''),
+      stopName: String(s?.stopName ?? '').trim() || `Parada ${s?.stopId}`,
+      lat: toNumber(s?.geometry?.coordinates?.[1]),
+      lon: toNumber(s?.geometry?.coordinates?.[0]),
+      lineasPaso: dedupeLabels((s?.lines ?? []).map((l: any) => l?.label)).join(', ') || undefined,
+    },
+    meters: toNumber(s?.metersToPoint) ?? 0,
+  }));
+}
+
+/**
+ * Paradas alrededor de una calle. Es la única forma que ofrece la API de buscar
+ * paradas por nombre (no existe búsqueda libre por nombre de parada).
+ */
+export async function getStopsAroundStreet(
+  street: string,
+  radius = 200,
+  streetNumber = 0
+): Promise<NearbyResult[]> {
+  const json = await apiGet(
+    `/v1/transport/busemtmad/stops/arroundstreet/${encodeURIComponent(street)}/${streetNumber}/${radius}/`
+  );
+  return mapNearby(Array.isArray(json?.data) ? json.data : []);
+}
+
+/** Otras paradas alrededor de una parada dada. */
+export async function getStopsAroundStop(stopId: string, radius = 300): Promise<NearbyResult[]> {
+  const json = await apiGet(
+    `/v2/transport/busemtmad/stops/arroundstop/${encodeURIComponent(stopId)}/${radius}/`
+  );
+  return mapNearby(Array.isArray(json?.data) ? json.data : []).filter(
+    (n) => n.parada.stopCode !== String(stopId)
+  );
+}
+
+export interface DiaServicio {
+  /** LA (laborable), SA (sábado) o FE (festivo). */
+  dayType: string;
+  etiqueta: string;
+  huelga: boolean;
+}
+
+/** Tipo de día de servicio y si hay huelga convocada (endpoint calendar). */
+export async function getDiaServicio(): Promise<DiaServicio | undefined> {
+  const ref = todayRef();
+  const json = await apiGet(`/v1/transport/busemtmad/calendar/${ref}/${ref}/`);
+  const d = json?.data?.[0];
+  if (!d) {
+    return undefined;
+  }
+  const dayType = String(d?.dayType ?? '').trim().toUpperCase();
+  const etiquetas: Record<string, string> = {
+    LA: 'Laborable',
+    SA: 'Sábado',
+    FE: 'Festivo',
+  };
+  return {
+    dayType,
+    etiqueta: etiquetas[dayType] ?? dayType,
+    huelga: String(d?.strike ?? 'N').trim().toUpperCase() === 'S',
+  };
+}
+
+export interface FranjaLinea {
+  inicio?: string;
+  fin?: string;
+  frecMin?: string;
+  frecMax?: string;
+  texto?: string;
+}
+
+export interface HorarioLinea {
+  dayType: string;
+  etiqueta: string;
+  sentido1?: FranjaLinea;
+  sentido2?: FranjaLinea;
+}
+
+function mapFranja(d: any): FranjaLinea | undefined {
+  if (!d) {
+    return undefined;
+  }
+  const franja: FranjaLinea = {
+    inicio: String(d?.StartTime ?? '').trim() || undefined,
+    fin: String(d?.StopTime ?? '').trim() || undefined,
+    frecMin: String(d?.MinimunFrequency ?? '').trim() || undefined,
+    frecMax: String(d?.MaximumFrequency ?? '').trim() || undefined,
+    texto: String(d?.FrequencyText ?? '').replace(/\/$/, '').trim() || undefined,
+  };
+  return franja.inicio || franja.texto ? franja : undefined;
+}
+
+/**
+ * Horarios y frecuencias de una línea por tipo de día y sentido.
+ * Ojo: este endpoint espera la ETIQUETA pública de la línea ("001"), no el id.
+ */
+export async function getHorariosLinea(label: string): Promise<HorarioLinea[]> {
+  const json = await apiGet(
+    `/v1/transport/busemtmad/lines/${encodeURIComponent(label)}/info/${todayRef()}/`
+  );
+  const arr: any[] = Array.isArray(json?.data?.[0]?.timeTable) ? json.data[0].timeTable : [];
+  const etiquetas: Record<string, string> = { LA: 'Laborables', SA: 'Sábados', FE: 'Festivos' };
+  return arr.map((t): HorarioLinea => {
+    const dayType = String(t?.idDayType ?? '').trim().toUpperCase();
+    return {
+      dayType,
+      etiqueta: etiquetas[dayType] ?? dayType,
+      sentido1: mapFranja(t?.Direction1),
+      sentido2: mapFranja(t?.Direction2),
+    };
+  });
+}
+
 /** Detalle de una parada (nombre, coordenadas y líneas que pasan). */
 export async function getStopDetail(stopId: string): Promise<Parada | undefined> {
   const json = await apiGet(`/v1/transport/busemtmad/stops/${encodeURIComponent(stopId)}/detail/`);
@@ -193,19 +310,64 @@ export async function getStopDetail(stopId: string): Promise<Parada | undefined>
   };
 }
 
-/** Tiempos de llegada en tiempo real de una parada, ordenados por minutos. */
-export async function getTiempos(stopId: string): Promise<Tiempo[]> {
+export interface Aviso {
+  titulo: string;
+  descripcion?: string;
+  desde?: Date;
+  hasta?: Date;
+}
+
+/** Parsea las fechas de los avisos, que vienen como "24/07/2026 21:00:00". */
+function parseFechaEs(value: unknown): Date | undefined {
+  const m = String(value ?? '').match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})$/);
+  if (!m) {
+    return undefined;
+  }
+  const [, dd, mm, yyyy, hh, mi, ss] = m;
+  const d = new Date(+yyyy, +mm - 1, +dd, +hh, +mi, +ss);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+export interface Llegadas {
+  tiempos: Tiempo[];
+  avisos: Aviso[];
+  /** Datos de la parada que devuelve la propia llamada (evita una petición extra). */
+  info?: { stopName?: string; address?: string; lineasPaso?: string };
+}
+
+/** Quita etiquetas HTML de las descripciones de aviso, que vienen con markup. */
+function stripHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Llegadas en tiempo real de una parada. Opcionalmente devuelve también los
+ * avisos/incidencias que afectan a la parada y los datos de la propia parada.
+ */
+export async function getLlegadas(
+  stopId: string,
+  opts?: { avisos?: boolean; info?: boolean }
+): Promise<Llegadas> {
+  const conAvisos = opts?.avisos ?? false;
+  const conInfo = opts?.info ?? false;
   const json = await apiPost(
     `/v2/transport/busemtmad/stops/${encodeURIComponent(stopId)}/arrives/`,
     {
       cultureInfo: 'ES',
-      Text_StopRequired_YN: 'N',
+      Text_StopRequired_YN: conInfo ? 'Y' : 'N',
       Text_EstimationsRequired_YN: 'Y',
-      Text_IncidencesRequired_YN: 'N',
+      Text_IncidencesRequired_YN: conAvisos ? 'Y' : 'N',
     }
   );
-  const arrive: any[] = Array.isArray(json?.data?.[0]?.Arrive) ? json.data[0].Arrive : [];
-  return arrive
+  const bloque = json?.data?.[0];
+
+  const arrive: any[] = Array.isArray(bloque?.Arrive) ? bloque.Arrive : [];
+  const tiempos = arrive
     .map((a): Tiempo => {
       const secs = toNumber(a?.estimateArrive);
       const isFar = secs === undefined || secs >= 999999;
@@ -221,6 +383,50 @@ export async function getTiempos(stopId: string): Promise<Tiempo[]> {
       };
     })
     .sort((x, y) => (x.minutos ?? Number.MAX_SAFE_INTEGER) - (y.minutos ?? Number.MAX_SAFE_INTEGER));
+
+  const incidencias: any[] = Array.isArray(bloque?.Incident?.ListaIncident?.data)
+    ? bloque.Incident.ListaIncident.data
+    : [];
+  // La API devuelve TODAS las incidencias de la red (una veintena), muchas
+  // programadas para días futuros. Nos quedamos solo con las vigentes ahora
+  // mismo; si no, la pantalla de parada se llenaría de avisos irrelevantes.
+  const ahora = Date.now();
+  const avisos: Aviso[] = incidencias
+    .map((i): Aviso => ({
+      titulo: stripHtml(i?.title),
+      descripcion: stripHtml(i?.description) || undefined,
+      desde: parseFechaEs(i?.rssFrom),
+      hasta: parseFechaEs(i?.rssTo),
+    }))
+    .filter((a) => {
+      if (!a.titulo) {
+        return false;
+      }
+      if (a.desde && ahora < a.desde.getTime()) {
+        return false;
+      }
+      if (a.hasta && ahora > a.hasta.getTime()) {
+        return false;
+      }
+      return true;
+    });
+
+  const stopInfo = bloque?.StopInfo?.[0];
+  const info = stopInfo
+    ? {
+        stopName: String(stopInfo?.stopName ?? '').trim() || undefined,
+        address: String(stopInfo?.Direction ?? '').trim() || undefined,
+        lineasPaso:
+          dedupeLabels((stopInfo?.lines ?? []).map((l: any) => l?.label)).join(', ') || undefined,
+      }
+    : undefined;
+
+  return { tiempos, avisos, info };
+}
+
+/** Atajo usado por las acciones de rotor: solo los tiempos. */
+export async function getTiempos(stopId: string): Promise<Tiempo[]> {
+  return (await getLlegadas(stopId)).tiempos;
 }
 
 // Fecha de referencia YYYYMMDD que piden los endpoints de líneas.
@@ -231,10 +437,6 @@ function todayRef(): string {
   return `${d.getFullYear()}${m}${day}`;
 }
 
-/**
- * Listado de líneas. TODO: confirmar la forma exacta de la respuesta de
- * `lines/info/<fecha>/` cuando haya credenciales; el mapeo es defensivo.
- */
 /** Texto blanco o negro según el brillo del fondo, para que el badge contraste. */
 function textoParaFondo(hex: string): string {
   const c = hex.replace('#', '');

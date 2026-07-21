@@ -15,6 +15,7 @@ export default function InicioHomeScreen() {
   const {
     favorites,
     currentLocation,
+    diaServicio,
     searchRadiusM,
     nearby,
     loadingLocation,
@@ -35,6 +36,22 @@ export default function InicioHomeScreen() {
       <Text style={styles.title} accessibilityRole="header">
         Inicio
       </Text>
+
+      {diaServicio ? (
+        <View
+          style={[styles.diaBanner, diaServicio.huelga && styles.diaBannerHuelga]}
+          accessible
+          accessibilityLabel={
+            `Servicio de hoy: ${diaServicio.etiqueta}.` +
+            (diaServicio.huelga ? ' Atención: hay huelga convocada.' : '')
+          }
+        >
+          <Text style={styles.diaText}>🗓️ Servicio de hoy: {diaServicio.etiqueta}</Text>
+          {diaServicio.huelga ? (
+            <Text style={styles.diaHuelga}>⚠️ Huelga convocada</Text>
+          ) : null}
+        </View>
+      ) : null}
 
       <Pressable
         style={styles.buttonPrimary}
@@ -109,6 +126,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   buttonText: { color: '#ffffff', fontSize: 17, fontWeight: '600' },
+  diaBanner: {
+    backgroundColor: theme.card,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 2,
+  },
+  diaBannerHuelga: { borderLeftColor: '#e0a33e' },
+  diaText: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
+  diaHuelga: { color: '#e0a33e', fontSize: 14, fontWeight: '700' },
   sectionHeader: { color: theme.text, fontSize: 20, fontWeight: '600', marginTop: 6 },
   card: { backgroundColor: theme.card, borderRadius: 16, overflow: 'hidden' },
   note: { color: theme.textMuted, fontSize: 15 },

@@ -1,25 +1,30 @@
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { getStopDetail, getTiempos } from '../services/emt';
+import { Aviso, getLlegadas, getStopsAroundStop, NearbyResult } from '../services/emt';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { Parada, Tiempo } from '../types';
+import { formatDistance } from '../utils/distance';
+import { parseLineasPaso, prettyLinea } from '../utils/lineas';
 import { spokenTiempo } from '../utils/tiempos';
 
 type ParadaParams = { Parada: { parada: Parada } };
+type Nav = NativeStackNavigationProp<{ Parada: { parada: Parada } }>;
 
 const AUTO_REFRESH_MS = 30_000;
+const CERCANAS_RADIO = 300;
 
 export default function ParadaScreen() {
   const route = useRoute<RouteProp<ParadaParams, 'Parada'>>();
-  const navigation = useNavigation();
+  const navigation = useNavigation<Nav>();
   const { isFavorite, addFavorite, removeFavorite } = useApp();
 
-  // El detalle puede llegar completo (desde cercanas) o solo con el número (búsqueda);
-  // en ese caso lo enriquecemos con el nombre y las líneas reales.
   const [parada, setParada] = useState<Parada>(route.params.parada);
   const [times, setTimes] = useState<Tiempo[]>([]);
+  const [avisos, setAvisos] = useState<Aviso[]>([]);
+  const [cercanas, setCercanas] = useState<NearbyResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const mounted = useRef(true);
@@ -28,26 +33,6 @@ export default function ParadaScreen() {
     navigation.setOptions({ title: '' });
   }, [navigation]);
 
-  // Enriquecer nombre/líneas si faltan.
-  useEffect(() => {
-    if (parada.lat !== undefined && parada.lineasPaso) {
-      return;
-    }
-    let active = true;
-    getStopDetail(parada.stopCode)
-      .then((detail) => {
-        if (active && detail) {
-          setParada((prev) => ({ ...prev, ...detail }));
-        }
-      })
-      .catch(() => {
-        // no crítico
-      });
-    return () => {
-      active = false;
-    };
-  }, [parada.stopCode, parada.lat, parada.lineasPaso]);
-
   const load = useCallback(
     async (silent: boolean) => {
       if (!silent) {
@@ -55,10 +40,23 @@ export default function ParadaScreen() {
         setError('');
       }
       try {
-        const data = await getTiempos(parada.stopCode);
-        if (mounted.current) {
-          setTimes(data);
-          setError('');
+        // Una sola llamada trae tiempos, avisos y los datos de la parada.
+        const { tiempos, avisos: nuevos, info } = await getLlegadas(parada.stopCode, {
+          avisos: true,
+          info: true,
+        });
+        if (!mounted.current) {
+          return;
+        }
+        setTimes(tiempos);
+        setAvisos(nuevos);
+        setError('');
+        if (info) {
+          setParada((prev) => ({
+            ...prev,
+            stopName: info.stopName ?? prev.stopName,
+            lineasPaso: info.lineasPaso ?? prev.lineasPaso,
+          }));
         }
       } catch (err) {
         if (mounted.current && !silent) {
@@ -83,7 +81,21 @@ export default function ParadaScreen() {
     };
   }, [load]);
 
+  // Otras paradas alrededor de esta (para caminar a una alternativa).
+  useEffect(() => {
+    let active = true;
+    getStopsAroundStop(parada.stopCode, CERCANAS_RADIO)
+      .then((r) => active && setCercanas(r.slice(0, 8)))
+      .catch(() => {
+        // no crítico
+      });
+    return () => {
+      active = false;
+    };
+  }, [parada.stopCode]);
+
   const fav = isFavorite(parada.stopCode);
+  const lineasParada = parseLineasPaso(parada.lineasPaso, 40);
 
   return (
     <ScrollView
@@ -116,6 +128,29 @@ export default function ParadaScreen() {
           <Text style={styles.secondaryText}>{fav ? '★ En favoritos' : '☆ Favorito'}</Text>
         </Pressable>
       </View>
+
+      {avisos.length > 0 && (
+        <View style={styles.avisoBox}>
+          <Text style={styles.avisoHeader} accessibilityRole="header">
+            ⚠️ Avisos ({avisos.length})
+          </Text>
+          {avisos.map((a, i) => (
+            <View
+              key={i}
+              style={styles.avisoItem}
+              accessible
+              accessibilityLabel={`Aviso: ${a.titulo}${a.descripcion ? `. ${a.descripcion}` : ''}`}
+            >
+              <Text style={styles.avisoTitulo}>{a.titulo}</Text>
+              {a.descripcion ? (
+                <Text style={styles.avisoTexto} numberOfLines={6}>
+                  {a.descripcion}
+                </Text>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      )}
 
       <Text style={styles.sectionHeader} accessibilityRole="header">
         Próximos autobuses
@@ -158,6 +193,55 @@ export default function ParadaScreen() {
           </View>
         </View>
       ))}
+
+      {lineasParada.length > 0 && (
+        <>
+          <Text style={styles.sectionHeader} accessibilityRole="header">
+            Líneas en esta parada
+          </Text>
+          <View
+            style={styles.chips}
+            accessible
+            accessibilityLabel={`Líneas que pasan por esta parada: ${lineasParada
+              .map(prettyLinea)
+              .join(', ')}`}
+          >
+            {lineasParada.map((core) => (
+              <View key={core} style={styles.chip}>
+                <Text style={styles.chipText}>{core}</Text>
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+
+      {cercanas.length > 0 && (
+        <>
+          <Text style={styles.sectionHeader} accessibilityRole="header">
+            Otras paradas cerca
+          </Text>
+          <View style={styles.card}>
+            {cercanas.map(({ parada: p, meters }, i) => (
+              <Pressable
+                key={p.stopCode}
+                style={[styles.nearRow, i < cercanas.length - 1 && styles.divider]}
+                onPress={() => navigation.push('Parada', { parada: p })}
+                accessibilityRole="button"
+                accessibilityLabel={`${p.stopName}, a ${formatDistance(meters)}. Parada ${p.stopCode}.`}
+                accessibilityHint="Toca dos veces para ver sus tiempos"
+              >
+                <View style={styles.nearText}>
+                  <Text style={styles.nearName}>{p.stopName}</Text>
+                  <Text style={styles.nearMeta}>
+                    {formatDistance(meters)}
+                    {p.lineasPaso ? ` · ${p.lineasPaso}` : ''}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -182,6 +266,18 @@ const styles = StyleSheet.create({
   },
   favActive: { backgroundColor: theme.primaryDark, borderColor: theme.primary },
   secondaryText: { color: theme.text, fontSize: 15, fontWeight: '600' },
+  avisoBox: {
+    backgroundColor: theme.card,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#e0a33e',
+    padding: 12,
+    gap: 8,
+  },
+  avisoHeader: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
+  avisoItem: { gap: 2 },
+  avisoTitulo: { color: theme.textStrong, fontSize: 15, fontWeight: '600' },
+  avisoTexto: { color: theme.textMuted, fontSize: 13, lineHeight: 18 },
   sectionHeader: { color: theme.text, fontSize: 18, fontWeight: '600', marginTop: 6 },
   note: { color: theme.textMuted, fontSize: 15, paddingVertical: 8 },
   errorBox: { gap: 10 },
@@ -201,4 +297,20 @@ const styles = StyleSheet.create({
   timeRight: { alignItems: 'flex-end' },
   timeMin: { color: theme.primary, fontSize: 17, fontWeight: '700' },
   timeDist: { color: theme.textMuted, fontSize: 13 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    backgroundColor: theme.card,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
+  },
+  chipText: { color: theme.text, fontSize: 15, fontWeight: '600' },
+  card: { backgroundColor: theme.card, borderRadius: 16, overflow: 'hidden' },
+  nearRow: { minHeight: 44, paddingVertical: 12, paddingHorizontal: 16 },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
+  nearText: { gap: 2 },
+  nearName: { color: theme.textStrong, fontSize: 16, fontWeight: '600' },
+  nearMeta: { color: theme.textMuted, fontSize: 13 },
 });
