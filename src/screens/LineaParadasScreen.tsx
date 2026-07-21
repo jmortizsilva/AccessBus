@@ -1,6 +1,6 @@
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useParadaActions } from '../hooks/useParadaActions';
 import { LineasStackParamList } from '../navigation/types';
@@ -8,6 +8,7 @@ import { getHorariosLinea, getStopsLinea, HorarioLinea } from '../services/emt';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { Parada } from '../types';
+import { parseLineasPaso } from '../utils/lineas';
 
 type Nav = NativeStackNavigationProp<LineasStackParamList, 'LineaParadas'>;
 
@@ -65,6 +66,20 @@ export default function LineaParadasScreen() {
   const horariosOrdenados = horarioHoy
     ? [horarioHoy, ...horarios.filter((h) => h !== horarioHoy)]
     : horarios;
+
+  // Correspondencias de cada parada: las demás líneas que pasan por ella, con su
+  // recorrido para orientar. Se calcula con los datos ya cargados (sin peticiones).
+  const recorridoPorLinea = useMemo(
+    () => Object.fromEntries(lineas.map((l) => [l.lin, l.descripcion])),
+    [lineas]
+  );
+  const enlacesDe = useCallback(
+    (parada: Parada): Enlace[] =>
+      parseLineasPaso(parada.lineasPaso, 40)
+        .filter((lin) => lin !== linea.lin)
+        .map((lin) => ({ lin, recorrido: recorridoPorLinea[lin] })),
+    [recorridoPorLinea, linea.lin]
+  );
 
   const destino = paradas.length > 0 ? paradas[paradas.length - 1].stopName : undefined;
 
@@ -140,6 +155,7 @@ export default function LineaParadasScreen() {
               parada={parada}
               order={i + 1}
               isLast={i === paradas.length - 1}
+              enlaces={enlacesDe(parada)}
               onOpen={() => navigation.navigate('Parada', { parada })}
             />
           ))}
@@ -149,15 +165,39 @@ export default function LineaParadasScreen() {
   );
 }
 
+interface Enlace {
+  lin: string;
+  recorrido?: string;
+}
+
+/** Cuántos enlaces se detallan con su recorrido antes de resumir el resto. */
+const ENLACES_DETALLADOS = 4;
+
+/** Texto hablado de las correspondencias, evitando que sea interminable. */
+function hablarEnlaces(enlaces: Enlace[]): string {
+  if (enlaces.length === 0) {
+    return '';
+  }
+  const detallados = enlaces
+    .slice(0, ENLACES_DETALLADOS)
+    .map((e) => `línea ${e.lin}${e.recorrido ? `, ${e.recorrido}` : ''}`)
+    .join('; ');
+  const resto = enlaces.slice(ENLACES_DETALLADOS);
+  const cola = resto.length > 0 ? `; y línea ${resto.map((e) => e.lin).join(', línea ')}` : '';
+  return ` Enlace con ${detallados}${cola}.`;
+}
+
 function LineaParadaRow({
   parada,
   order,
   isLast,
+  enlaces,
   onOpen,
 }: {
   parada: Parada;
   order: number;
   isLast: boolean;
+  enlaces: Enlace[];
   onOpen: () => void;
 }) {
   const { accessibilityActions, onAccessibilityAction, fav } = useParadaActions(parada, onOpen);
@@ -166,7 +206,9 @@ function LineaParadaRow({
       style={[styles.row, !isLast && styles.divider]}
       onPress={onOpen}
       accessibilityRole="button"
-      accessibilityLabel={`${parada.stopName}.${fav ? ' En favoritos.' : ''}`}
+      accessibilityLabel={
+        `${parada.stopName}.${hablarEnlaces(enlaces)}${fav ? ' En favoritos.' : ''}`
+      }
       accessibilityHint="Toca dos veces para abrir. En el rotor de acciones tienes el tiempo de cada línea."
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={onAccessibilityAction}
@@ -180,6 +222,11 @@ function LineaParadaRow({
           {fav ? ' ★' : ''}
         </Text>
         <Text style={styles.rowMeta}>Parada {parada.stopCode}</Text>
+        {enlaces.length > 0 ? (
+          <Text style={styles.enlaces} numberOfLines={2}>
+            Enlaces: {enlaces.map((e) => e.lin).join(', ')}
+          </Text>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -231,4 +278,5 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, gap: 2 },
   rowTitle: { color: theme.textStrong, fontSize: 17, fontWeight: '600' },
   rowMeta: { color: theme.textMuted, fontSize: 13 },
+  enlaces: { color: theme.text, fontSize: 13, marginTop: 2 },
 });
