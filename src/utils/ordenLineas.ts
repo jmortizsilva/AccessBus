@@ -7,9 +7,9 @@
  * (C, E, N/búho, SE, T…) agrupada y también por su número: C1, C2, C03; N1, N2…
  * N26; SE2, SE3… Los números van antes que las letras.
  *
- * OJO: los ceros a la izquierda son significativos ("001" y "1" son líneas
- * distintas en la EMT), así que solo se usan para desempatar, nunca para
- * fusionarlas.
+ * Las líneas con cero inicial ("001", "002": las eléctricas) van AGRUPADAS al
+ * principio, no intercaladas con su mismo número. Los ceros a la izquierda son
+ * significativos: "001" y "1" son líneas distintas en la EMT.
  */
 
 type Token = string | number;
@@ -28,6 +28,13 @@ function trocear(label: string): Token[] {
 
 /** Compara dos etiquetas de línea en orden natural. */
 export function compararLineas(a: string, b: string): number {
+  // Las líneas con cero inicial (eléctricas: "001", "002") van todas al principio,
+  // agrupadas; entre ellas y con el resto, sigue el orden natural de abajo.
+  const ceroA = a.startsWith('0');
+  const ceroB = b.startsWith('0');
+  if (ceroA !== ceroB) {
+    return ceroA ? -1 : 1;
+  }
   const ta = trocear(a);
   const tb = trocear(b);
   const n = Math.min(ta.length, tb.length);

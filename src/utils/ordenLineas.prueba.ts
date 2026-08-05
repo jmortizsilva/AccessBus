@@ -20,17 +20,16 @@ describe('compararLineas', () => {
     expect(orden(['E5', 'E', 'E1'])).toEqual(['E', 'E1', 'E5']);
   });
 
-  it('mantiene distintas "001" y "1" y las ordena de forma estable', () => {
-    const r = orden(['1', '001']);
-    expect(r).toContain('001');
-    expect(r).toContain('1');
-    // "001" y "1" son líneas distintas; el desempate deja "001" antes que "1".
-    expect(r.indexOf('001')).toBeLessThan(r.indexOf('1'));
+  it('agrupa las líneas con cero inicial (eléctricas) al principio', () => {
+    // "001"/"002" no se intercalan con 1/2: van juntas y antes que todas.
+    expect(orden(['1', '002', '2', '001', '10'])).toEqual(['001', '002', '1', '2', '10']);
   });
 
   it('orden realista de una muestra variada', () => {
-    const muestra = ['N1', '10', 'C1', '1', 'E1', '2', 'SE712', '100', 'C03', 'N10'];
+    const muestra = ['N1', '10', 'C1', '001', '1', 'E1', '002', '2', 'SE712', '100', 'C03', 'N10'];
     expect(orden(muestra)).toEqual([
+      '001',
+      '002',
       '1',
       '2',
       '10',
