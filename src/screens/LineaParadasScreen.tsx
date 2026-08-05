@@ -128,14 +128,21 @@ export default function LineaParadasScreen() {
 
       {horariosOrdenados.length > 0 && (
         <View style={styles.horarioBox}>
+          {/*
+            El estado va en accessibilityValue (español, controlado por nosotros), NO
+            en accessibilityState.expanded: en RN 0.81 Fabric ese estado añade el literal
+            "expanded" en inglés (RCTViewComponentView.mm usa RCTLocalizedString con una
+            clave que ni siquiera está traducida en es.lproj) y además no existe el caso
+            "collapsed". Así VoiceOver anuncia "Contraído"/"Expandido" en ambos estados.
+          */}
           <Pressable
             style={styles.horarioToggle}
             onPress={() => setMostrarHorarios((v) => !v)}
             accessibilityRole="button"
-            accessibilityState={{ expanded: mostrarHorarios }}
             accessibilityLabel="Horarios y frecuencias"
+            accessibilityValue={{ text: mostrarHorarios ? 'Expandido' : 'Contraído' }}
             accessibilityHint={
-              mostrarHorarios ? 'Toca dos veces para ocultarlos' : 'Toca dos veces para verlos'
+              mostrarHorarios ? 'Toca dos veces para contraer' : 'Toca dos veces para expandir'
             }>
             <Text style={styles.horarioHeader}>Horarios y frecuencias</Text>
             <Text style={styles.horarioChevron}>{mostrarHorarios ? '▲' : '▼'}</Text>
