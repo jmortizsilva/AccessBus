@@ -134,7 +134,7 @@ export default function AjustesScreen() {
       </View>
 
       <Text style={styles.footer}>
-        BusMadrid · Datos de EMT Madrid (MobilityLabs). Los tiempos de paso son en tiempo real.
+        AccessBus · Datos de EMT Madrid (MobilityLabs). Los tiempos de paso son en tiempo real.
       </Text>
     </ScrollView>
   );

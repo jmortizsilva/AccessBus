@@ -7,7 +7,7 @@ const IS_DEV = process.env.APP_VARIANT === 'development';
 
 export default ({ config }) => ({
   ...config,
-  name: IS_DEV ? 'BusMadrid Dev' : config.name,
+  name: IS_DEV ? 'AccessBus Dev' : config.name,
   ios: {
     ...config.ios,
     bundleIdentifier: IS_DEV ? 'com.jmortizsilva.busmadrid.dev' : config.ios.bundleIdentifier,

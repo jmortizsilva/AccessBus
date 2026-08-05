@@ -1,4 +1,4 @@
-# BusMadrid (EMT Madrid)
+# AccessBus (EMT Madrid)
 
 App para consultar los autobuses de la EMT de Madrid: líneas, paradas, paradas cercanas
 y tiempos de paso en tiempo real. **React Native + Expo + TypeScript**, pensada para ser
@@ -14,7 +14,7 @@ Esqueleto funcional que **compila y empaqueta** (typecheck + bundle iOS OK). Fal
 **enchufar credenciales** y verificar contra la API real.
 
 ### Hecho
-- Config: nombre "BusMadrid", bundle `com.jmortizsilva.busmadrid`, HTTPS (sin excepción
+- Config: nombre "AccessBus", bundle `com.jmortizsilva.busmadrid`, HTTPS (sin excepción
   ATS), tema azul, iconos propios neutros.
 - Capa de servicio [`src/services/emt.ts`](src/services/emt.ts): login (modo `passKey`
   o email/password) con gestión y renovación de token, y endpoints de **llegadas en

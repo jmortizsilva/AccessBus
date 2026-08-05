@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "BusMadrid",
+    "name": "AccessBus",
     "slug": "busmadrid",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -46,7 +46,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "BusMadrid usa tu ubicación para mostrarte las paradas de autobús más cercanas."
+          "locationWhenInUsePermission": "AccessBus usa tu ubicación para mostrarte las paradas de autobús más cercanas."
         }
       ]
     ],

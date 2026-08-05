@@ -1,6 +1,6 @@
-# Ayuda de BusMadrid
+# Ayuda de AccessBus
 
-BusMadrid te dice cuándo llega tu autobús en Madrid. Es una app **independiente**
+AccessBus te dice cuándo llega tu autobús en Madrid. Es una app **independiente**
 (no oficial) que usa los datos públicos en tiempo real de **EMT Madrid MobilityLabs**.
 
 No necesita registro, no muestra publicidad y no envía tu ubicación a ningún sitio:
@@ -153,5 +153,5 @@ y solo mientras la tienes abierta.
 
 ## Aviso
 
-BusMadrid es una aplicación independiente, sin relación con la EMT ni con el
+AccessBus es una aplicación independiente, sin relación con la EMT ni con el
 Ayuntamiento de Madrid. Fuente de los datos: **EMT Madrid MobilityLabs**.
