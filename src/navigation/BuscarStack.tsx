@@ -16,8 +16,7 @@ export default function BuscarStack() {
         headerTitleStyle: { color: theme.textStrong },
         contentStyle: { backgroundColor: theme.bg },
         headerBackTitle: 'Atrás',
-      }}
-    >
+      }}>
       <Stack.Screen name="BuscarHome" component={BuscarScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Parada" component={ParadaScreen} options={{ title: '' }} />
       <Stack.Screen name="LineaParadas" component={LineaParadasScreen} options={{ title: '' }} />

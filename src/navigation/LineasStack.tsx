@@ -16,9 +16,12 @@ export default function LineasStack() {
         headerTitleStyle: { color: theme.textStrong },
         contentStyle: { backgroundColor: theme.bg },
         headerBackTitle: 'Atrás',
-      }}
-    >
-      <Stack.Screen name="LineasList" component={LineasListScreen} options={{ headerShown: false }} />
+      }}>
+      <Stack.Screen
+        name="LineasList"
+        component={LineasListScreen}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen name="LineaParadas" component={LineaParadasScreen} options={{ title: '' }} />
       <Stack.Screen name="Parada" component={ParadaScreen} options={{ title: '' }} />
     </Stack.Navigator>

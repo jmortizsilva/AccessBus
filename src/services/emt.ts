@@ -58,7 +58,7 @@ async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Respon
   throw new Error(
     (ultimo as Error)?.name === 'AbortError'
       ? 'El servicio de EMT tarda demasiado en responder'
-      : 'Sin conexión con el servicio de EMT'
+      : 'Sin conexión con el servicio de EMT',
   );
 }
 
@@ -82,7 +82,7 @@ async function login(): Promise<string> {
   if (attempts.length === 0) {
     throw new Error(
       'Faltan credenciales de EMT. Define EXPO_PUBLIC_EMT_CLIENT_ID y EXPO_PUBLIC_EMT_PASSKEY ' +
-        '(o EXPO_PUBLIC_EMT_EMAIL y EXPO_PUBLIC_EMT_PASSWORD) en .env'
+        '(o EXPO_PUBLIC_EMT_EMAIL y EXPO_PUBLIC_EMT_PASSWORD) en .env',
     );
   }
 
@@ -112,7 +112,9 @@ async function login(): Promise<string> {
   // Si todos los intentos fueron fallos de red, el mensaje ya es claro para el
   // usuario ("Sin conexión con el servicio de EMT"); no lo enterramos en jerga.
   throw new Error(
-    fallosDeRed === attempts.length ? ultimoError : `No se pudo iniciar sesión en EMT: ${ultimoError}`
+    fallosDeRed === attempts.length
+      ? ultimoError
+      : `No se pudo iniciar sesión en EMT: ${ultimoError}`,
   );
 }
 
@@ -161,7 +163,9 @@ const apiPost = (path: string, body: unknown) =>
  * misma etiqueta en el listado de líneas y en las llegadas.
  */
 export function normalizeLabel(value: unknown): string {
-  return String(value ?? '').trim().toUpperCase();
+  return String(value ?? '')
+    .trim()
+    .toUpperCase();
 }
 
 function dedupeLabels(labels: unknown[]): string[] {
@@ -186,25 +190,13 @@ export interface NearbyResult {
 export async function getStopsAround(
   lat: number,
   lon: number,
-  radius: number
+  radius: number,
 ): Promise<NearbyResult[]> {
-  const json = await apiGet(
-    `/v2/transport/busemtmad/stops/arroundxy/${lon}/${lat}/${radius}/`
-  );
-  const arr: any[] = Array.isArray(json?.data) ? json.data : [];
-  return arr.map((s) => ({
-    parada: {
-      stopCode: String(s?.stopId ?? ''),
-      stopName: String(s?.stopName ?? '').trim() || `Parada ${s?.stopId}`,
-      lat: toNumber(s?.geometry?.coordinates?.[1]),
-      lon: toNumber(s?.geometry?.coordinates?.[0]),
-      lineasPaso: dedupeLabels((s?.lines ?? []).map((l: any) => l?.label)).join(', ') || undefined,
-    },
-    meters: toNumber(s?.metersToPoint) ?? 0,
-  }));
+  const json = await apiGet(`/v2/transport/busemtmad/stops/arroundxy/${lon}/${lat}/${radius}/`);
+  return mapNearby(Array.isArray(json?.data) ? json.data : []);
 }
 
-/** Mapea la estructura de paradas que comparten `arroundxy` y `arroundstreet`. */
+/** Mapea la estructura de paradas del endpoint `arroundxy`. */
 function mapNearby(arr: any[]): NearbyResult[] {
   return arr.map((s) => ({
     parada: {
@@ -216,31 +208,6 @@ function mapNearby(arr: any[]): NearbyResult[] {
     },
     meters: toNumber(s?.metersToPoint) ?? 0,
   }));
-}
-
-/**
- * Paradas alrededor de una calle. Es la única forma que ofrece la API de buscar
- * paradas por nombre (no existe búsqueda libre por nombre de parada).
- */
-export async function getStopsAroundStreet(
-  street: string,
-  radius = 200,
-  streetNumber = 0
-): Promise<NearbyResult[]> {
-  const json = await apiGet(
-    `/v1/transport/busemtmad/stops/arroundstreet/${encodeURIComponent(street)}/${streetNumber}/${radius}/`
-  );
-  return mapNearby(Array.isArray(json?.data) ? json.data : []);
-}
-
-/** Otras paradas alrededor de una parada dada. */
-export async function getStopsAroundStop(stopId: string, radius = 300): Promise<NearbyResult[]> {
-  const json = await apiGet(
-    `/v2/transport/busemtmad/stops/arroundstop/${encodeURIComponent(stopId)}/${radius}/`
-  );
-  return mapNearby(Array.isArray(json?.data) ? json.data : []).filter(
-    (n) => n.parada.stopCode !== String(stopId)
-  );
 }
 
 export interface DiaServicio {
@@ -258,7 +225,9 @@ export async function getDiaServicio(): Promise<DiaServicio | undefined> {
   if (!d) {
     return undefined;
   }
-  const dayType = String(d?.dayType ?? '').trim().toUpperCase();
+  const dayType = String(d?.dayType ?? '')
+    .trim()
+    .toUpperCase();
   const etiquetas: Record<string, string> = {
     LA: 'Laborable',
     SA: 'Sábado',
@@ -267,7 +236,10 @@ export async function getDiaServicio(): Promise<DiaServicio | undefined> {
   return {
     dayType,
     etiqueta: etiquetas[dayType] ?? dayType,
-    huelga: String(d?.strike ?? 'N').trim().toUpperCase() === 'S',
+    huelga:
+      String(d?.strike ?? 'N')
+        .trim()
+        .toUpperCase() === 'S',
   };
 }
 
@@ -295,7 +267,10 @@ function mapFranja(d: any): FranjaLinea | undefined {
     fin: String(d?.StopTime ?? '').trim() || undefined,
     frecMin: String(d?.MinimunFrequency ?? '').trim() || undefined,
     frecMax: String(d?.MaximumFrequency ?? '').trim() || undefined,
-    texto: String(d?.FrequencyText ?? '').replace(/\/$/, '').trim() || undefined,
+    texto:
+      String(d?.FrequencyText ?? '')
+        .replace(/\/$/, '')
+        .trim() || undefined,
   };
   return franja.inicio || franja.texto ? franja : undefined;
 }
@@ -306,12 +281,14 @@ function mapFranja(d: any): FranjaLinea | undefined {
  */
 export async function getHorariosLinea(label: string): Promise<HorarioLinea[]> {
   const json = await apiGet(
-    `/v1/transport/busemtmad/lines/${encodeURIComponent(label)}/info/${todayRef()}/`
+    `/v1/transport/busemtmad/lines/${encodeURIComponent(label)}/info/${todayRef()}/`,
   );
   const arr: any[] = Array.isArray(json?.data?.[0]?.timeTable) ? json.data[0].timeTable : [];
   const etiquetas: Record<string, string> = { LA: 'Laborables', SA: 'Sábados', FE: 'Festivos' };
   return arr.map((t): HorarioLinea => {
-    const dayType = String(t?.idDayType ?? '').trim().toUpperCase();
+    const dayType = String(t?.idDayType ?? '')
+      .trim()
+      .toUpperCase();
     return {
       dayType,
       etiqueta: etiquetas[dayType] ?? dayType,
@@ -405,9 +382,7 @@ function mapAvisosVigentes(incidencias: any[]): Aviso[] {
 
 /** Incidencias vigentes de una línea concreta (la API sí filtra por línea). */
 export async function getAvisosLinea(lin: string): Promise<Aviso[]> {
-  const json = await apiGet(
-    `/v1/transport/busemtmad/lines/incidents/${encodeURIComponent(lin)}/`
-  );
+  const json = await apiGet(`/v1/transport/busemtmad/lines/incidents/${encodeURIComponent(lin)}/`);
   const d = json?.data?.[0];
   const items: any[] = Array.isArray(d?.ListaIncident?.data) ? d.ListaIncident.data : [];
   return mapAvisosVigentes(items);
@@ -419,7 +394,7 @@ export async function getAvisosLinea(lin: string): Promise<Aviso[]> {
  */
 export async function getLlegadas(
   stopId: string,
-  opts?: { avisos?: boolean; info?: boolean }
+  opts?: { avisos?: boolean; info?: boolean },
 ): Promise<Llegadas> {
   const conAvisos = opts?.avisos ?? false;
   const conInfo = opts?.info ?? false;
@@ -430,7 +405,7 @@ export async function getLlegadas(
       Text_StopRequired_YN: conInfo ? 'Y' : 'N',
       Text_EstimationsRequired_YN: 'Y',
       Text_IncidencesRequired_YN: conAvisos ? 'Y' : 'N',
-    }
+    },
   );
   const bloque = json?.data?.[0];
 
@@ -450,7 +425,9 @@ export async function getLlegadas(
         destino: String(a?.destination ?? '').trim() || undefined,
       };
     })
-    .sort((x, y) => (x.minutos ?? Number.MAX_SAFE_INTEGER) - (y.minutos ?? Number.MAX_SAFE_INTEGER));
+    .sort(
+      (x, y) => (x.minutos ?? Number.MAX_SAFE_INTEGER) - (y.minutos ?? Number.MAX_SAFE_INTEGER),
+    );
 
   const incidencias: any[] = Array.isArray(bloque?.Incident?.ListaIncident?.data)
     ? bloque.Incident.ListaIncident.data
@@ -512,7 +489,10 @@ export async function getLineas(): Promise<Linea[]> {
       const label = normalizeLabel(l?.label ?? l?.line);
       const nameA = String(l?.nameA ?? '').trim();
       const nameB = String(l?.nameB ?? '').trim();
-      const color = String(l?.color ?? '').replace('#', '').trim() || '1c5aa0';
+      const color =
+        String(l?.color ?? '')
+          .replace('#', '')
+          .trim() || '1c5aa0';
       return {
         id: String(l?.line ?? label),
         lin: label,
@@ -536,17 +516,15 @@ export async function getLineas(): Promise<Linea[]> {
 export async function getStopsLinea(
   lineId: string,
   direction: 1 | 2,
-  labelById?: Record<string, string>
+  labelById?: Record<string, string>,
 ): Promise<Parada[]> {
   const json = await apiGet(
-    `/v1/transport/busemtmad/lines/${encodeURIComponent(lineId)}/stops/${direction}/`
+    `/v1/transport/busemtmad/lines/${encodeURIComponent(lineId)}/stops/${direction}/`,
   );
   const stops: any[] = Array.isArray(json?.data?.[0]?.stops) ? json.data[0].stops : [];
   return stops.map((s, index): Parada => {
     const ids: unknown[] = Array.isArray(s?.dataLine) ? s.dataLine : [];
-    const labels = dedupeLabels(
-      ids.map((id) => labelById?.[String(id)] ?? normalizeLabel(id))
-    );
+    const labels = dedupeLabels(ids.map((id) => labelById?.[String(id)] ?? normalizeLabel(id)));
     return {
       stopCode: String(s?.stop ?? s?.stopId ?? ''),
       stopName: String(s?.name ?? s?.stopName ?? '').trim(),

@@ -1,4 +1,6 @@
 import red from './red.json';
+import { Parada } from '../types';
+import { normalizeText } from '../utils/text';
 
 /**
  * Índice de correspondencias de toda la red, precalculado con
@@ -20,6 +22,81 @@ export interface Enlace {
 
 const rutas: Enlace[] = red.rutas;
 const paradas: Record<string, number[]> = red.paradas;
+
+/** Cada parada del directorio: [código, nombre, lat, lon]. */
+type ParadaDir = [string, string, number, number];
+const directorio: ParadaDir[] = (red.directorio ?? []) as ParadaDir[];
+
+// Índice con el nombre normalizado, precalculado una vez, para poder buscar
+// por nombre en cada tecla sin recalcular acentos ni mayúsculas.
+const directorioNorm = directorio.map(([code, nombre, lat, lon]) => ({
+  code,
+  nombre,
+  lat,
+  lon,
+  norm: normalizeText(nombre),
+}));
+const porCodigo = new Map(directorioNorm.map((d) => [d.code, d]));
+
+/** Etiquetas de líneas que pasan por una parada, según el índice ("5, 14, 27"). */
+function lineasPasoDeParada(stopCode: string): string | undefined {
+  const vistas = new Set<string>();
+  for (const e of lineasDeParada(stopCode)) {
+    vistas.add(e.lin);
+  }
+  return vistas.size > 0 ? [...vistas].join(', ') : undefined;
+}
+
+/** Datos de una parada (nombre, coordenadas, líneas) desde el índice local. */
+export function paradaDelIndice(stopCode: string): Parada | undefined {
+  const d = porCodigo.get(String(stopCode));
+  if (!d) {
+    return undefined;
+  }
+  return {
+    stopCode: d.code,
+    stopName: d.nombre,
+    lat: d.lat,
+    lon: d.lon,
+    lineasPaso: lineasPasoDeParada(d.code),
+  };
+}
+
+/**
+ * Busca paradas por nombre en el índice local (offline, instantáneo).
+ *
+ * La API de EMT no tiene búsqueda por nombre —solo por cercanía a una calle, que
+ * devuelve paradas de calles vecinas y se deja fuera las de la misma calle que
+ * quedan lejos del punto geolocalizado—. El directorio precalculado resuelve esto
+ * sin gastar ninguna petición. Cada palabra del texto debe aparecer en el nombre,
+ * y se priorizan los nombres que empiezan por lo escrito.
+ */
+export function buscarParadas(texto: string, limite = 40): Parada[] {
+  const q = normalizeText(texto);
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return [];
+  }
+  const encontradas = directorioNorm.filter((d) => tokens.every((t) => d.norm.includes(t)));
+  encontradas.sort((a, b) => {
+    const aEmpieza = a.norm.startsWith(q) ? 0 : 1;
+    const bEmpieza = b.norm.startsWith(q) ? 0 : 1;
+    if (aEmpieza !== bEmpieza) {
+      return aEmpieza - bEmpieza;
+    }
+    if (a.norm.length !== b.norm.length) {
+      return a.norm.length - b.norm.length;
+    }
+    return a.norm.localeCompare(b.norm);
+  });
+  return encontradas.slice(0, limite).map((d) => ({
+    stopCode: d.code,
+    stopName: d.nombre,
+    lat: d.lat,
+    lon: d.lon,
+    lineasPaso: lineasPasoDeParada(d.code),
+  }));
+}
 
 /** Fecha en que se generó el índice (para saber si conviene regenerarlo). */
 export const redGenerada: string = red.generado;

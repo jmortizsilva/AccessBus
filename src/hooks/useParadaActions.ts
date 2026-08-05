@@ -38,9 +38,7 @@ export function useParadaActions(parada: Parada, onOpen: () => void) {
       const nombre = `Líneas de la parada (${enlaces.length})`;
       actions.push({ name: nombre, label: nombre });
       map.set(nombre, () => {
-        const texto = enlaces
-          .map((e) => `${prettyLinea(e.lin)} hacia ${e.destino}`)
-          .join('. ');
+        const texto = enlaces.map((e) => `${prettyLinea(e.lin)} hacia ${e.destino}`).join('. ');
         AccessibilityInfo.announceForAccessibility(`${parada.stopName}. ${texto}`);
       });
     }
@@ -67,7 +65,7 @@ export function useParadaActions(parada: Parada, onOpen: () => void) {
       }
       handlers.get(name)?.();
     },
-    [handlers, onOpen]
+    [handlers, onOpen],
   );
 
   return { accessibilityActions, onAccessibilityAction, fav, lineas };

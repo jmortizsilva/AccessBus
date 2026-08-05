@@ -6,6 +6,7 @@ import InicioStack from './src/navigation/InicioStack';
 import LineasStack from './src/navigation/LineasStack';
 import { TabParamList } from './src/navigation/types';
 import AjustesScreen from './src/screens/AjustesScreen';
+import { useActualizaciones } from './src/services/actualizaciones';
 import { AppProvider } from './src/state/AppContext';
 import { theme } from './src/theme';
 
@@ -24,6 +25,7 @@ const navigationTheme = {
 };
 
 export default function App() {
+  useActualizaciones();
   return (
     <AppProvider>
       <StatusBar style="light" />
@@ -31,8 +33,7 @@ export default function App() {
         <Tab.Navigator
           tabBarStyle={{ backgroundColor: theme.card }}
           tabBarActiveTintColor={theme.primary}
-          tabBarInactiveTintColor={theme.textMuted}
-        >
+          tabBarInactiveTintColor={theme.textMuted}>
           <Tab.Screen
             name="Inicio"
             component={InicioStack}

@@ -26,7 +26,7 @@ export default function LineasListScreen() {
   useFocusEffect(
     useCallback(() => {
       void refreshLineas(false);
-    }, [refreshLineas])
+    }, [refreshLineas]),
   );
 
   // Filtro por número de línea o por destino (son 236 líneas).
@@ -36,7 +36,7 @@ export default function LineasListScreen() {
       return lineas;
     }
     return lineas.filter(
-      (l) => normalizeText(l.lin).includes(q) || normalizeText(l.descripcion).includes(q)
+      (l) => normalizeText(l.lin).includes(q) || normalizeText(l.descripcion).includes(q),
     );
   }, [lineas, query]);
 
@@ -44,8 +44,7 @@ export default function LineasListScreen() {
     <ScrollView
       contentContainerStyle={styles.content}
       accessibilityLabel="Pantalla Líneas"
-      keyboardShouldPersistTaps="handled"
-    >
+      keyboardShouldPersistTaps="handled">
       <Text style={styles.title} accessibilityRole="header">
         Líneas
       </Text>
@@ -75,7 +74,7 @@ export default function LineasListScreen() {
       )}
 
       {filtradas.length === 0 && lineas.length > 0 ? (
-        <Text style={styles.note}>Ninguna línea coincide con "{query.trim()}".</Text>
+        <Text style={styles.note}>Ninguna línea coincide con «{query.trim()}».</Text>
       ) : null}
 
       {filtradas.length > 0 && (
@@ -94,7 +93,15 @@ export default function LineasListScreen() {
   );
 }
 
-function LineaRow({ linea, isLast, onPress }: { linea: Linea; isLast: boolean; onPress: () => void }) {
+function LineaRow({
+  linea,
+  isLast,
+  onPress,
+}: {
+  linea: Linea;
+  isLast: boolean;
+  onPress: () => void;
+}) {
   const bg = hexColor(linea.colorFondo, theme.primaryDark);
   const fg = hexColor(linea.colorTexto, '#ffffff');
   return (
@@ -103,8 +110,7 @@ function LineaRow({ linea, isLast, onPress }: { linea: Linea; isLast: boolean; o
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`Línea ${linea.lin}. ${linea.descripcion}`}
-      accessibilityHint="Toca dos veces para ver sus paradas"
-    >
+      accessibilityHint="Toca dos veces para ver sus paradas">
       <View style={[styles.badge, { backgroundColor: bg }]} importantForAccessibility="no">
         <Text style={[styles.badgeText, { color: fg }]}>{linea.lin}</Text>
       </View>

@@ -28,7 +28,7 @@ export default function InicioHomeScreen() {
   useFocusEffect(
     useCallback(() => {
       void refreshLocation({ silent: true });
-    }, [refreshLocation])
+    }, [refreshLocation]),
   );
 
   return (
@@ -44,12 +44,9 @@ export default function InicioHomeScreen() {
           accessibilityLabel={
             `Servicio de hoy: ${diaServicio.etiqueta}.` +
             (diaServicio.huelga ? ' Atención: hay huelga convocada.' : '')
-          }
-        >
+          }>
           <Text style={styles.diaText}>🗓️ Servicio de hoy: {diaServicio.etiqueta}</Text>
-          {diaServicio.huelga ? (
-            <Text style={styles.diaHuelga}>⚠️ Huelga convocada</Text>
-          ) : null}
+          {diaServicio.huelga ? <Text style={styles.diaHuelga}>⚠️ Huelga convocada</Text> : null}
         </View>
       ) : null}
 
@@ -58,8 +55,7 @@ export default function InicioHomeScreen() {
         onPress={() => void refreshLocation()}
         accessibilityRole="button"
         accessibilityLabel="Actualizar mi ubicación"
-        accessibilityHint="Usa el GPS para buscar las paradas más cercanas"
-      >
+        accessibilityHint="Usa el GPS para buscar las paradas más cercanas">
         <Text style={styles.buttonText}>📍 Actualizar ubicación</Text>
       </Pressable>
       {(loadingLocation || loadingNearby) && (
@@ -71,7 +67,8 @@ export default function InicioHomeScreen() {
       </Text>
       {favorites.length === 0 ? (
         <Text style={styles.note}>
-          Aún no tienes favoritos. Añádelos desde una parada (buscándola en Líneas o entre las cercanas).
+          Aún no tienes favoritos. Añádelos desde una parada (buscándola en Líneas o entre las
+          cercanas).
         </Text>
       ) : (
         <View style={styles.card}>
@@ -90,10 +87,13 @@ export default function InicioHomeScreen() {
         Paradas cercanas
       </Text>
       {!currentLocation ? (
-        <Text style={styles.note}>Pulsa "Actualizar ubicación" para ver las paradas a tu alrededor.</Text>
+        <Text style={styles.note}>
+          Pulsa «Actualizar ubicación» para ver las paradas a tu alrededor.
+        </Text>
       ) : nearby.length === 0 && !loadingNearby ? (
         <Text style={styles.note}>
-          No hay paradas en un radio de {formatDistance(searchRadiusM)}. Puedes ampliarlo en Ajustes.
+          No hay paradas en un radio de {formatDistance(searchRadiusM)}. Puedes ampliarlo en
+          Ajustes.
         </Text>
       ) : (
         <View style={styles.card}>

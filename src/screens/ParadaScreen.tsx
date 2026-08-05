@@ -2,14 +2,13 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Aviso, getLlegadas, getStopsAroundStop, NearbyResult } from '../services/emt';
+import { Aviso, getLlegadas } from '../services/emt';
 import { asegurarPermisoNotificaciones, avisar } from '../services/notificaciones';
 import { lineasDeParada, sentidoDeLinea } from '../data/red';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { Linea, Parada, Tiempo } from '../types';
-import { formatDistance } from '../utils/distance';
-import { parseLineasPaso, prettyLinea } from '../utils/lineas';
+import { parseLineasPaso } from '../utils/lineas';
 import { spokenTiempo } from '../utils/tiempos';
 
 type ParadaParams = { Parada: { parada: Parada } };
@@ -20,7 +19,6 @@ type Nav = NativeStackNavigationProp<{
 
 const AUTO_REFRESH_MS = 30_000;
 const VIGILANCIA_MS = 20_000;
-const CERCANAS_RADIO = 300;
 
 export default function ParadaScreen() {
   const route = useRoute<RouteProp<ParadaParams, 'Parada'>>();
@@ -30,7 +28,6 @@ export default function ParadaScreen() {
   const [parada, setParada] = useState<Parada>(route.params.parada);
   const [times, setTimes] = useState<Tiempo[]>([]);
   const [avisos, setAvisos] = useState<Aviso[]>([]);
-  const [cercanas, setCercanas] = useState<NearbyResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [vigilando, setVigilando] = useState(false);
@@ -53,7 +50,11 @@ export default function ParadaScreen() {
       }
       try {
         // Una sola llamada trae tiempos, avisos y los datos de la parada.
-        const { tiempos, avisos: nuevos, info } = await getLlegadas(parada.stopCode, {
+        const {
+          tiempos,
+          avisos: nuevos,
+          info,
+        } = await getLlegadas(parada.stopCode, {
           avisos: true,
           info: true,
         });
@@ -78,7 +79,7 @@ export default function ParadaScreen() {
             void avisar(
               `Línea ${t.linea} llegando`,
               `${parada.stopName}: ${t.minutos <= 0 ? 'está en la parada' : `llega en ${t.minutos} min`}` +
-                (t.destino ? `, hacia ${t.destino}` : '')
+                (t.destino ? `, hacia ${t.destino}` : ''),
             );
           }
         }
@@ -99,7 +100,7 @@ export default function ParadaScreen() {
         }
       }
     },
-    [parada.stopCode, parada.stopName, umbralMin]
+    [parada.stopCode, parada.stopName, umbralMin],
   );
 
   // Mientras se vigila conviene refrescar más a menudo.
@@ -113,19 +114,6 @@ export default function ParadaScreen() {
     };
   }, [load, vigilando]);
 
-  // Otras paradas alrededor de esta (para caminar a una alternativa).
-  useEffect(() => {
-    let active = true;
-    getStopsAroundStop(parada.stopCode, CERCANAS_RADIO)
-      .then((r) => active && setCercanas(r.slice(0, 8)))
-      .catch(() => {
-        // no crítico
-      });
-    return () => {
-      active = false;
-    };
-  }, [parada.stopCode]);
-
   const fav = isFavorite(parada.stopCode);
   // Preferimos el índice precalculado, que además dice hacia dónde va cada línea.
   const delIndice = lineasDeParada(parada.stopCode);
@@ -134,17 +122,32 @@ export default function ParadaScreen() {
       ? delIndice
       : parseLineasPaso(parada.lineasPaso, 40).map((lin) => ({ lin }));
 
+  // Líneas que pasan por la parada pero que ahora mismo no tienen paso próximo.
+  // Se muestran bajo los tiempos (misma sección) para no duplicar el listado:
+  // así se sabe qué líneas pasan y se puede abrir su recorrido, sin repetir.
+  const conTiempo = new Set(times.map((t) => t.linea));
+  const sinTiempo = lineasParada.filter((l) => !conTiempo.has(l.lin));
+
+  // Abre el recorrido de una línea (por su etiqueta) en el sentido correcto.
+  const abrirLinea = (lin: string) => {
+    const linea = lineas.find((l) => l.lin === lin);
+    if (linea) {
+      navigation.navigate('LineaParadas', {
+        linea,
+        sentido: sentidoDeLinea(parada.stopCode, lin),
+      });
+    }
+  };
+
   return (
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
-      accessibilityLabel={`Parada ${parada.stopName}`}
-    >
+      accessibilityLabel={`Parada ${parada.stopName}`}>
       <View style={styles.header}>
         <Text style={styles.title} accessibilityRole="header">
-          {parada.stopName}
+          {parada.stopName} (parada {parada.stopCode})
         </Text>
-        <Text style={styles.code}>Parada {parada.stopCode}</Text>
       </View>
 
       <View style={styles.actionsRow}>
@@ -152,16 +155,14 @@ export default function ParadaScreen() {
           style={styles.secondaryButton}
           onPress={() => void load(false)}
           accessibilityRole="button"
-          accessibilityLabel="Actualizar tiempos"
-        >
+          accessibilityLabel="Actualizar tiempos">
           <Text style={styles.secondaryText}>Actualizar</Text>
         </Pressable>
         <Pressable
           style={[styles.secondaryButton, fav && styles.favActive]}
           onPress={() => (fav ? removeFavorite(parada.stopCode) : addFavorite(parada))}
           accessibilityRole="button"
-          accessibilityLabel={fav ? 'Quitar de favoritos' : 'Añadir a favoritos'}
-        >
+          accessibilityLabel={fav ? 'Quitar de favoritos' : 'Añadir a favoritos'}>
           <Text style={styles.secondaryText}>{fav ? '★ En favoritos' : '☆ Favorito'}</Text>
         </Pressable>
       </View>
@@ -182,8 +183,7 @@ export default function ParadaScreen() {
           vigilando
             ? 'Se te está avisando cuando un autobús llega'
             : `Te avisará cuando un autobús esté a ${umbralMin} minutos o menos, con la app abierta`
-        }
-      >
+        }>
         <Text style={styles.vigilarText}>
           {vigilando ? `🔔 Vigilando (aviso a ${umbralMin} min)` : '🔕 Vigilar esta parada'}
         </Text>
@@ -193,29 +193,6 @@ export default function ParadaScreen() {
           Mantén la app abierta. Te avisaré en cuanto una línea esté a {umbralMin} minutos o menos.
         </Text>
       ) : null}
-
-      {avisos.length > 0 && (
-        <View style={styles.avisoBox}>
-          <Text style={styles.avisoHeader} accessibilityRole="header">
-            ⚠️ Avisos ({avisos.length})
-          </Text>
-          {avisos.map((a, i) => (
-            <View
-              key={i}
-              style={styles.avisoItem}
-              accessible
-              accessibilityLabel={`Aviso: ${a.titulo}${a.descripcion ? `. ${a.descripcion}` : ''}`}
-            >
-              <Text style={styles.avisoTitulo}>{a.titulo}</Text>
-              {a.descripcion ? (
-                <Text style={styles.avisoTexto} numberOfLines={6}>
-                  {a.descripcion}
-                </Text>
-              ) : null}
-            </View>
-          ))}
-        </View>
-      )}
 
       <Text style={styles.sectionHeader} accessibilityRole="header">
         Próximos autobuses
@@ -230,8 +207,7 @@ export default function ParadaScreen() {
             style={styles.secondaryButton}
             onPress={() => void load(false)}
             accessibilityRole="button"
-            accessibilityLabel="Reintentar"
-          >
+            accessibilityLabel="Reintentar">
             <Text style={styles.secondaryText}>Reintentar</Text>
           </Pressable>
         </View>
@@ -243,28 +219,19 @@ export default function ParadaScreen() {
 
       {times.map((t, index) => {
         // Al pulsar se abre el recorrido de esa línea, para seguir el viaje.
-        const linea = lineas.find((l) => l.lin === t.linea);
+        const abrible = lineas.some((l) => l.lin === t.linea);
         return (
           <Pressable
             key={`${t.linea}-${index}`}
             style={styles.timeRow}
-            onPress={
-              linea
-                ? () =>
-                    navigation.navigate('LineaParadas', {
-                      linea,
-                      sentido: sentidoDeLinea(parada.stopCode, t.linea),
-                    })
-                : undefined
-            }
-            disabled={!linea}
-            accessibilityRole={linea ? 'button' : undefined}
+            onPress={abrible ? () => abrirLinea(t.linea) : undefined}
+            disabled={!abrible}
+            accessibilityRole={abrible ? 'button' : undefined}
             accessible
             accessibilityLabel={spokenTiempo(t)}
             accessibilityHint={
-              linea ? 'Toca dos veces para ver el recorrido de esta línea' : undefined
-            }
-          >
+              abrible ? 'Toca dos veces para ver el recorrido de esta línea' : undefined
+            }>
             <View style={styles.timeLeft}>
               <Text style={styles.timeLinea}>Línea {t.linea}</Text>
               {t.destino ? <Text style={styles.timeDest}>{t.destino}</Text> : null}
@@ -277,53 +244,54 @@ export default function ParadaScreen() {
         );
       })}
 
-      {lineasParada.length > 0 && (
-        <>
-          <Text style={styles.sectionHeader} accessibilityRole="header">
-            Líneas en esta parada
-          </Text>
-          <View style={styles.card}>
-            {lineasParada.map((l, i) => (
-              <View
-                key={`${l.lin}-${i}`}
-                style={[styles.lineaRow, i < lineasParada.length - 1 && styles.divider]}
-                accessible
-                accessibilityLabel={`${prettyLinea(l.lin)}${l.destino ? ` hacia ${l.destino}` : ''}`}
-              >
-                <Text style={styles.lineaLin}>{l.lin}</Text>
-                {l.destino ? <Text style={styles.lineaDestino}>hacia {l.destino}</Text> : null}
-              </View>
-            ))}
-          </View>
-        </>
-      )}
+      {/* Líneas que también pasan por la parada pero sin paso próximo ahora.
+          Van en la misma sección para no duplicar el listado de líneas. */}
+      {sinTiempo.map((l, index) => {
+        const abrible = lineas.some((x) => x.lin === l.lin);
+        return (
+          <Pressable
+            key={`sin-${l.lin}-${index}`}
+            style={styles.timeRow}
+            onPress={abrible ? () => abrirLinea(l.lin) : undefined}
+            disabled={!abrible}
+            accessibilityRole={abrible ? 'button' : undefined}
+            accessible
+            accessibilityLabel={`Línea ${l.lin}${l.destino ? `, hacia ${l.destino}` : ''}. Sin paso próximo.`}
+            accessibilityHint={
+              abrible ? 'Toca dos veces para ver el recorrido de esta línea' : undefined
+            }>
+            <View style={styles.timeLeft}>
+              <Text style={styles.timeLinea}>Línea {l.lin}</Text>
+              {l.destino ? <Text style={styles.timeDest}>hacia {l.destino}</Text> : null}
+            </View>
+            <View style={styles.timeRight}>
+              <Text style={styles.timeSin}>Sin próximos</Text>
+            </View>
+          </Pressable>
+        );
+      })}
 
-      {cercanas.length > 0 && (
-        <>
-          <Text style={styles.sectionHeader} accessibilityRole="header">
-            Otras paradas cerca
+      {/* Los avisos van al final: primero lo útil (autobuses y líneas). */}
+      {avisos.length > 0 && (
+        <View style={styles.avisoBox}>
+          <Text style={styles.avisoHeader} accessibilityRole="header">
+            ⚠️ Avisos ({avisos.length})
           </Text>
-          <View style={styles.card}>
-            {cercanas.map(({ parada: p, meters }, i) => (
-              <Pressable
-                key={p.stopCode}
-                style={[styles.nearRow, i < cercanas.length - 1 && styles.divider]}
-                onPress={() => navigation.push('Parada', { parada: p })}
-                accessibilityRole="button"
-                accessibilityLabel={`${p.stopName}, a ${formatDistance(meters)}. Parada ${p.stopCode}.`}
-                accessibilityHint="Toca dos veces para ver sus tiempos"
-              >
-                <View style={styles.nearText}>
-                  <Text style={styles.nearName}>{p.stopName}</Text>
-                  <Text style={styles.nearMeta}>
-                    {formatDistance(meters)}
-                    {p.lineasPaso ? ` · ${p.lineasPaso}` : ''}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        </>
+          {avisos.map((a, i) => (
+            <View
+              key={i}
+              style={styles.avisoItem}
+              accessible
+              accessibilityLabel={`Aviso: ${a.titulo}${a.descripcion ? `. ${a.descripcion}` : ''}`}>
+              <Text style={styles.avisoTitulo}>{a.titulo}</Text>
+              {a.descripcion ? (
+                <Text style={styles.avisoTexto} numberOfLines={6}>
+                  {a.descripcion}
+                </Text>
+              ) : null}
+            </View>
+          ))}
+        </View>
       )}
     </ScrollView>
   );
@@ -334,7 +302,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 16, paddingBottom: 40, gap: 12 },
   header: { paddingTop: 8, gap: 4 },
   title: { color: theme.textStrong, fontSize: 26, fontWeight: '700' },
-  code: { color: theme.textMuted, fontSize: 15 },
   actionsRow: { flexDirection: 'row', gap: 12 },
   secondaryButton: {
     flex: 1,
@@ -348,7 +315,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   favActive: { backgroundColor: theme.primaryDark, borderColor: theme.primary },
-  vigilarButton: { borderRadius: 12, backgroundColor: theme.card, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.border, minHeight: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 12 },
+  vigilarButton: {
+    borderRadius: 12,
+    backgroundColor: theme.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
   vigilarActivo: { backgroundColor: theme.primaryDark, borderColor: theme.primary },
   vigilarText: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
   secondaryText: { color: theme.text, fontSize: 15, fontWeight: '600' },
@@ -383,22 +359,5 @@ const styles = StyleSheet.create({
   timeRight: { alignItems: 'flex-end' },
   timeMin: { color: theme.primary, fontSize: 17, fontWeight: '700' },
   timeDist: { color: theme.textMuted, fontSize: 13 },
-  lineaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 40, paddingVertical: 8, paddingHorizontal: 16 },
-  lineaLin: { color: theme.primary, fontSize: 16, fontWeight: '800', minWidth: 46 },
-  lineaDestino: { color: theme.text, fontSize: 15, flexShrink: 1 },
-  chip: {
-    backgroundColor: theme.card,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.border,
-  },
-  chipText: { color: theme.text, fontSize: 15, fontWeight: '600' },
-  card: { backgroundColor: theme.card, borderRadius: 16, overflow: 'hidden' },
-  nearRow: { minHeight: 44, paddingVertical: 12, paddingHorizontal: 16 },
-  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
-  nearText: { gap: 2 },
-  nearName: { color: theme.textStrong, fontSize: 16, fontWeight: '600' },
-  nearMeta: { color: theme.textMuted, fontSize: 13 },
+  timeSin: { color: theme.textMuted, fontSize: 15 },
 });

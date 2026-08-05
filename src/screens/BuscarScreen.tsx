@@ -1,76 +1,58 @@
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import ParadaRow from '../components/ParadaRow';
+import { buscarParadas, paradaDelIndice } from '../data/red';
 import { BuscarStackParamList } from '../navigation/types';
-import { getStopsAroundStreet, NearbyResult } from '../services/emt';
 import { theme } from '../theme';
-import { formatDistance } from '../utils/distance';
 
 type Nav = NativeStackNavigationProp<BuscarStackParamList, 'BuscarHome'>;
 
-const RADIO_CALLE = 250;
+/** A partir de cuántas letras empezamos a buscar por nombre. */
+const MIN_LETRAS = 2;
+const MAX_RESULTADOS = 40;
 
 export default function BuscarScreen() {
   const navigation = useNavigation<Nav>();
   const [query, setQuery] = useState('');
-  const [resultados, setResultados] = useState<NearbyResult[] | undefined>(undefined);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   const q = query.trim();
   const esNumero = /^\d+$/.test(q);
+  // Si el número está en el índice, ya sabemos su nombre (mejor que "Parada 3990").
+  const paradaPorNumero = esNumero ? paradaDelIndice(q) : undefined;
 
-  const buscar = useCallback(async () => {
-    if (q.length < 3 || esNumero) {
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      const r = await getStopsAroundStreet(q, RADIO_CALLE);
-      setResultados(r);
-    } catch (err) {
-      setError(String((err as Error).message ?? err));
-      setResultados(undefined);
-    } finally {
-      setLoading(false);
-    }
-  }, [q, esNumero]);
+  // Búsqueda local (offline, instantánea): el índice de red trae los nombres de
+  // todas las paradas, así que no hace falta ninguna petición ni esperar.
+  const resultados = useMemo(
+    () => (esNumero || q.length < MIN_LETRAS ? [] : buscarParadas(q, MAX_RESULTADOS)),
+    [q, esNumero],
+  );
+  const buscando = !esNumero && q.length >= MIN_LETRAS;
 
   return (
     <ScrollView
       contentContainerStyle={styles.content}
       accessibilityLabel="Pantalla Buscar paradas"
-      keyboardShouldPersistTaps="handled"
-    >
+      keyboardShouldPersistTaps="handled">
       <Text style={styles.title} accessibilityRole="header">
         Buscar
       </Text>
 
+      {/*
+        Input NO controlado (sin `value`): con la arquitectura nueva de RN, un
+        TextInput controlado duplica el texto al dictar en iOS, porque el
+        reconciliador reaplica el valor mientras el dictado sigue insertando.
+        Rastreamos el texto por onChangeText, que es lo único que necesitamos.
+      */}
       <TextInput
-        value={query}
-        onChangeText={(v) => {
-          setQuery(v);
-          setResultados(undefined);
-          setError('');
-        }}
-        onSubmitEditing={() => void buscar()}
-        placeholder="Nombre de calle o número de parada"
+        onChangeText={setQuery}
+        placeholder="Nombre de parada o de calle, o número de parada"
         placeholderTextColor={theme.textMuted}
         style={styles.input}
         returnKeyType="search"
         accessibilityLabel="Buscar parada"
-        accessibilityHint="Escribe el nombre de una calle, o el número exacto de una parada"
+        accessibilityHint="Escribe el nombre de una parada o calle, o el número exacto de una parada"
         autoCorrect={false}
       />
 
@@ -80,51 +62,49 @@ export default function BuscarScreen() {
           <Pressable
             style={styles.row}
             onPress={() =>
-              navigation.navigate('Parada', { parada: { stopCode: q, stopName: `Parada ${q}` } })
+              navigation.navigate('Parada', {
+                parada: paradaPorNumero ?? { stopCode: q, stopName: `Parada ${q}` },
+              })
             }
             accessibilityRole="button"
-            accessibilityLabel={`Consultar parada número ${q}`}
-            accessibilityHint="Toca dos veces para ver sus tiempos de paso"
-          >
-            <Text style={styles.rowTitle}>Ir a la parada {q}</Text>
-            <Text style={styles.rowDesc}>Ver tiempos de paso en tiempo real</Text>
+            accessibilityLabel={
+              paradaPorNumero
+                ? `Consultar ${paradaPorNumero.stopName}, parada ${q}`
+                : `Consultar parada número ${q}`
+            }
+            accessibilityHint="Toca dos veces para ver sus tiempos de paso">
+            <Text style={styles.rowTitle}>
+              {paradaPorNumero ? paradaPorNumero.stopName : `Ir a la parada ${q}`}
+            </Text>
+            <Text style={styles.rowDesc}>
+              {paradaPorNumero ? `Parada ${q} · ver tiempos` : 'Ver tiempos de paso en tiempo real'}
+            </Text>
           </Pressable>
         </View>
       )}
 
-      {!esNumero && q.length >= 3 && (
-        <Pressable
-          style={styles.buttonPrimary}
-          onPress={() => void buscar()}
-          accessibilityRole="button"
-          accessibilityLabel={`Buscar paradas en ${q}`}
-        >
-          <Text style={styles.buttonText}>Buscar paradas en "{q}"</Text>
-        </Pressable>
-      )}
-
-      {loading && <ActivityIndicator color={theme.primary} accessibilityLabel="Buscando paradas" />}
-      {error ? <Text style={styles.note}>No se pudo buscar: {error}</Text> : null}
-
-      {resultados !== undefined && !loading && (
+      {buscando && (
         <>
-          <Text style={styles.sectionHeader} accessibilityRole="header">
+          <Text
+            style={styles.sectionHeader}
+            accessibilityRole="header"
+            accessibilityLiveRegion="polite">
             {resultados.length === 0
               ? 'Sin resultados'
               : `${resultados.length} ${resultados.length === 1 ? 'parada' : 'paradas'}`}
           </Text>
           {resultados.length === 0 ? (
             <Text style={styles.note}>
-              No se han encontrado paradas cerca de "{q}". Prueba con otro nombre de calle.
+              No se ha encontrado ninguna parada con «{q}». Prueba con otro nombre o con el número
+              de parada.
             </Text>
           ) : (
             <View style={styles.card}>
-              {resultados.map(({ parada, meters }, i) => (
+              {resultados.map((parada, i) => (
                 <ParadaRow
                   key={parada.stopCode}
                   parada={parada}
                   onOpen={() => navigation.navigate('Parada', { parada })}
-                  distanceText={formatDistance(meters)}
                   isLast={i === resultados.length - 1}
                 />
               ))}
@@ -133,10 +113,10 @@ export default function BuscarScreen() {
         </>
       )}
 
-      {resultados === undefined && !loading && q.length < 3 && (
+      {!esNumero && q.length < MIN_LETRAS && (
         <Text style={styles.note}>
-          Escribe el nombre de una calle (por ejemplo, "Gran Vía") y pulsa Buscar, o el número
-          exacto de una parada.
+          Escribe el nombre de una parada o calle (por ejemplo, «Vía Lusitana» o «Gran Vía»), o el
+          número exacto de una parada.
         </Text>
       )}
     </ScrollView>
@@ -154,15 +134,6 @@ const styles = StyleSheet.create({
     color: theme.textStrong,
     backgroundColor: theme.card,
   },
-  buttonPrimary: {
-    borderRadius: 12,
-    backgroundColor: theme.primaryDark,
-    minHeight: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  buttonText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
   sectionHeader: { color: theme.text, fontSize: 18, fontWeight: '600', marginTop: 6 },
   card: { backgroundColor: theme.card, borderRadius: 16, overflow: 'hidden' },
   note: { color: theme.textMuted, fontSize: 15 },

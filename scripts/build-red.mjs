@@ -18,11 +18,14 @@ const BASE = 'https://openapi.emtmadrid.es';
 const CONCURRENCIA = 6;
 
 const env = Object.fromEntries(
-  fs.readFileSync(path.join(ROOT, '.env'), 'utf8')
-    .split(/\r?\n/).filter(Boolean).map((l) => {
+  fs
+    .readFileSync(path.join(ROOT, '.env'), 'utf8')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((l) => {
       const i = l.indexOf('=');
       return [l.slice(0, i).trim(), l.slice(i + 1).trim()];
-    })
+    }),
 );
 
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -45,13 +48,18 @@ let token;
 async function login() {
   const intentos = [];
   if (env.EXPO_PUBLIC_EMT_CLIENT_ID && env.EXPO_PUBLIC_EMT_PASSKEY) {
-    intentos.push({ 'X-ClientId': env.EXPO_PUBLIC_EMT_CLIENT_ID, passKey: env.EXPO_PUBLIC_EMT_PASSKEY });
+    intentos.push({
+      'X-ClientId': env.EXPO_PUBLIC_EMT_CLIENT_ID,
+      passKey: env.EXPO_PUBLIC_EMT_PASSKEY,
+    });
   }
   if (env.EXPO_PUBLIC_EMT_EMAIL && env.EXPO_PUBLIC_EMT_PASSWORD) {
     intentos.push({ email: env.EXPO_PUBLIC_EMT_EMAIL, password: env.EXPO_PUBLIC_EMT_PASSWORD });
   }
   for (const headers of intentos) {
-    const j = await (await fetchReintento(`${BASE}/v2/mobilitylabs/user/login/`, { headers })).json();
+    const j = await (
+      await fetchReintento(`${BASE}/v2/mobilitylabs/user/login/`, { headers })
+    ).json();
     if (j?.data?.[0]?.accessToken) {
       token = j.data[0].accessToken;
       return;
@@ -70,7 +78,10 @@ async function api(pathname, reintento = true) {
   return j;
 }
 
-const norm = (v) => String(v ?? '').trim().toUpperCase();
+const norm = (v) =>
+  String(v ?? '')
+    .trim()
+    .toUpperCase();
 
 async function main() {
   await login();
@@ -90,8 +101,9 @@ async function main() {
     }
   }
 
-  const rutas = [];            // [{ lin, dir, destino }]
+  const rutas = []; // [{ lin, dir, destino }]
   const porParada = new Map(); // stopCode -> Set(indice de ruta)
+  const infoParada = new Map(); // stopCode -> { nombre, lat, lon }
   let hechas = 0;
   let fallos = 0;
 
@@ -99,7 +111,9 @@ async function main() {
     while (tareas.length > 0) {
       const t = tareas.shift();
       try {
-        const j = await api(`/v1/transport/busemtmad/lines/${encodeURIComponent(t.id)}/stops/${t.dir}/`);
+        const j = await api(
+          `/v1/transport/busemtmad/lines/${encodeURIComponent(t.id)}/stops/${t.dir}/`,
+        );
         const stops = j?.data?.[0]?.stops ?? [];
         if (stops.length > 0) {
           const destino = String(stops[stops.length - 1]?.name ?? '').trim();
@@ -110,6 +124,17 @@ async function main() {
               if (!code) continue;
               if (!porParada.has(code)) porParada.set(code, new Set());
               porParada.get(code).add(idx);
+              // Nombre y coordenadas para poder buscar paradas por nombre sin
+              // gastar peticiones. Se guarda la primera vez que aparece la parada.
+              if (!infoParada.has(code)) {
+                const nombre = String(s?.name ?? '').trim();
+                const coords = s?.geometry?.coordinates ?? [];
+                infoParada.set(code, {
+                  nombre,
+                  lat: Number(coords[1]),
+                  lon: Number(coords[0]),
+                });
+              }
             }
           }
         }
@@ -128,16 +153,30 @@ async function main() {
     paradas[code] = [...set].sort((a, b) => a - b);
   }
 
+  // Directorio de paradas: [code, nombre, lat, lon] por parada. Formato de
+  // tupla (no objeto) para no inflar el bundle repitiendo las claves.
+  const directorio = [];
+  for (const [code, info] of infoParada) {
+    const lat = Number.isFinite(info.lat) ? Number(info.lat.toFixed(5)) : 0;
+    const lon = Number.isFinite(info.lon) ? Number(info.lon.toFixed(5)) : 0;
+    directorio.push([code, info.nombre, lat, lon]);
+  }
+  directorio.sort((a, b) => a[0].localeCompare(b[0]));
+
   const salida = {
     generado: new Date().toISOString().slice(0, 10),
     rutas,
     paradas,
+    directorio,
   };
   const destino = path.join(ROOT, 'src', 'data', 'red.json');
   fs.mkdirSync(path.dirname(destino), { recursive: true });
   fs.writeFileSync(destino, JSON.stringify(salida));
   const kb = Math.round(fs.statSync(destino).size / 1024);
-  console.log(`\nListo: ${rutas.length} rutas, ${Object.keys(paradas).length} paradas, ${kb} KB`);
+  console.log(
+    `\nListo: ${rutas.length} rutas, ${Object.keys(paradas).length} paradas, ` +
+      `${directorio.length} en el directorio, ${kb} KB`,
+  );
   if (fallos) console.log(`(${fallos} peticiones fallaron)`);
 }
 

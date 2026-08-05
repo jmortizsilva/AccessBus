@@ -16,9 +16,12 @@ export default function InicioStack() {
         headerTitleStyle: { color: theme.textStrong },
         contentStyle: { backgroundColor: theme.bg },
         headerBackTitle: 'Atrás',
-      }}
-    >
-      <Stack.Screen name="InicioHome" component={InicioHomeScreen} options={{ headerShown: false }} />
+      }}>
+      <Stack.Screen
+        name="InicioHome"
+        component={InicioHomeScreen}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen name="Parada" component={ParadaScreen} options={{ title: '' }} />
       <Stack.Screen name="LineaParadas" component={LineaParadasScreen} options={{ title: '' }} />
     </Stack.Navigator>

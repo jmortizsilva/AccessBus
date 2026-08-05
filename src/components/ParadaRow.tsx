@@ -30,8 +30,7 @@ export default function ParadaRow({ parada, onOpen, distanceText, isLast = false
       }
       accessibilityHint="Toca dos veces para abrir. En el rotor de acciones tienes el tiempo de cada línea."
       accessibilityActions={accessibilityActions}
-      onAccessibilityAction={onAccessibilityAction}
-    >
+      onAccessibilityAction={onAccessibilityAction}>
       <View style={styles.main}>
         <Text style={styles.name}>
           {parada.stopName}

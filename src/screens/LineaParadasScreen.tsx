@@ -19,22 +19,25 @@ export default function LineaParadasScreen() {
   const { linea, sentido: sentidoPedido } = route.params;
   const { lineas, diaServicio, isFavoriteLinea, toggleFavoriteLinea } = useApp();
   const [horarios, setHorarios] = useState<HorarioLinea[]>([]);
+  // Los horarios ocupan mucho; se muestran plegados tras un botón.
+  const [mostrarHorarios, setMostrarHorarios] = useState(false);
 
   // Las paradas traen IDs internos de línea; este mapa los traduce a etiquetas
   // públicas para que las acciones de rotor puedan consultar cada línea.
-  const labelById = useMemo(
-    () => Object.fromEntries(lineas.map((l) => [l.id, l.lin])),
-    [lineas]
-  );
+  const labelById = useMemo(() => Object.fromEntries(lineas.map((l) => [l.id, l.lin])), [lineas]);
 
   const [paradas, setParadas] = useState<Parada[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sentido, setSentido] = useState<1 | 2>(sentidoPedido ?? 1);
 
+  // Cabecera unificada dentro de la pantalla; la barra de navegación se deja sin
+  // título para no repetir "Línea E1" dos veces.
   useLayoutEffect(() => {
-    navigation.setOptions({ title: `Línea ${linea.lin}` });
-  }, [navigation, linea.lin]);
+    navigation.setOptions({ title: '' });
+  }, [navigation]);
+
+  const tituloLinea = `Línea ${linea.lin}${linea.descripcion ? ` - ${linea.descripcion}` : ''}`;
 
   useEffect(() => {
     let active = true;
@@ -81,7 +84,7 @@ export default function LineaParadasScreen() {
         .filter((lin) => lin !== linea.lin)
         .map((lin) => ({ lin }));
     },
-    [linea.lin]
+    [linea.lin],
   );
 
   const destino = paradas.length > 0 ? paradas[paradas.length - 1].stopName : undefined;
@@ -90,10 +93,9 @@ export default function LineaParadasScreen() {
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
-      accessibilityLabel={`Paradas de la línea ${linea.lin}`}
-    >
+      accessibilityLabel={`Paradas de la línea ${linea.lin}`}>
       <Text style={styles.header} accessibilityRole="header">
-        {linea.descripcion || `Línea ${linea.lin}`}
+        {tituloLinea}
       </Text>
 
       <Pressable
@@ -106,8 +108,7 @@ export default function LineaParadasScreen() {
             ? `Dejar de seguir la línea ${linea.lin}`
             : `Seguir la línea ${linea.lin}`
         }
-        accessibilityHint="Las líneas seguidas te avisan de sus incidencias"
-      >
+        accessibilityHint="Las líneas seguidas te avisan de sus incidencias">
         <Text style={styles.seguirText}>
           {isFavoriteLinea(linea.lin) ? '🔔 Siguiendo esta línea' : '🔕 Seguir esta línea'}
         </Text>
@@ -118,8 +119,7 @@ export default function LineaParadasScreen() {
         onPress={() => setSentido((s) => (s === 1 ? 2 : 1))}
         accessibilityRole="button"
         accessibilityLabel={`Cambiar sentido. Ahora: sentido ${sentido}${destino ? `, hacia ${destino}` : ''}`}
-        accessibilityHint="Toca dos veces para ver el otro sentido"
-      >
+        accessibilityHint="Toca dos veces para ver el otro sentido">
         <Text style={styles.sentidoText}>
           🔁 Sentido {sentido}
           {destino ? ` · hacia ${destino}` : ''}
@@ -128,36 +128,45 @@ export default function LineaParadasScreen() {
 
       {horariosOrdenados.length > 0 && (
         <View style={styles.horarioBox}>
-          <Text style={styles.horarioHeader} accessibilityRole="header">
-            Horarios y frecuencias
-          </Text>
-          {horariosOrdenados.map((h) => (
-            <View key={h.dayType} style={styles.horarioDia}>
-              <Text style={styles.horarioDiaTitulo}>
-                {h.etiqueta}
-                {h.dayType === diaServicio?.dayType ? ' (hoy)' : ''}
-              </Text>
-              {([1, 2] as const).map((s) => {
-                const f = s === 1 ? h.sentido1 : h.sentido2;
-                if (!f) {
-                  return null;
-                }
-                const detalle =
-                  f.texto ??
-                  `De ${f.inicio} a ${f.fin}` +
-                    (f.frecMin ? ` · cada ${f.frecMin}-${f.frecMax} min` : '');
-                return (
-                  <Text
-                    key={s}
-                    style={styles.horarioTexto}
-                    accessibilityLabel={`${h.etiqueta}, sentido ${s}: ${detalle}`}
-                  >
-                    Sentido {s}: {detalle}
-                  </Text>
-                );
-              })}
-            </View>
-          ))}
+          <Pressable
+            style={styles.horarioToggle}
+            onPress={() => setMostrarHorarios((v) => !v)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: mostrarHorarios }}
+            accessibilityLabel="Horarios y frecuencias"
+            accessibilityHint={
+              mostrarHorarios ? 'Toca dos veces para ocultarlos' : 'Toca dos veces para verlos'
+            }>
+            <Text style={styles.horarioHeader}>Horarios y frecuencias</Text>
+            <Text style={styles.horarioChevron}>{mostrarHorarios ? '▲' : '▼'}</Text>
+          </Pressable>
+          {mostrarHorarios &&
+            horariosOrdenados.map((h) => (
+              <View key={h.dayType} style={styles.horarioDia}>
+                <Text style={styles.horarioDiaTitulo}>
+                  {h.etiqueta}
+                  {h.dayType === diaServicio?.dayType ? ' (hoy)' : ''}
+                </Text>
+                {([1, 2] as const).map((s) => {
+                  const f = s === 1 ? h.sentido1 : h.sentido2;
+                  if (!f) {
+                    return null;
+                  }
+                  const detalle =
+                    f.texto ??
+                    `De ${f.inicio} a ${f.fin}` +
+                      (f.frecMin ? ` · cada ${f.frecMin}-${f.frecMax} min` : '');
+                  return (
+                    <Text
+                      key={s}
+                      style={styles.horarioTexto}
+                      accessibilityLabel={`${h.etiqueta}, sentido ${s}: ${detalle}`}>
+                      Sentido {s}: {detalle}
+                    </Text>
+                  );
+                })}
+              </View>
+            ))}
         </View>
       )}
 
@@ -226,13 +235,10 @@ function LineaParadaRow({
       style={[styles.row, !isLast && styles.divider]}
       onPress={onOpen}
       accessibilityRole="button"
-      accessibilityLabel={
-        `${parada.stopName}.${hablarEnlaces(enlaces)}${fav ? ' En favoritos.' : ''}`
-      }
+      accessibilityLabel={`${parada.stopName}.${hablarEnlaces(enlaces)}${fav ? ' En favoritos.' : ''}`}
       accessibilityHint="Toca dos veces para abrir. En el rotor de acciones tienes el tiempo de cada línea."
       accessibilityActions={accessibilityActions}
-      onAccessibilityAction={onAccessibilityAction}
-    >
+      onAccessibilityAction={onAccessibilityAction}>
       <View style={styles.orderBadge} importantForAccessibility="no">
         <Text style={styles.orderText}>{order}</Text>
       </View>
@@ -265,7 +271,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   sentidoText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
-  seguirButton: { borderRadius: 12, backgroundColor: theme.card, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.border, minHeight: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 12 },
+  seguirButton: {
+    borderRadius: 12,
+    backgroundColor: theme.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
   seguirActivo: { backgroundColor: theme.primaryDark, borderColor: theme.primary },
   seguirText: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
   horarioBox: {
@@ -274,7 +289,14 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 10,
   },
+  horarioToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+  },
   horarioHeader: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
+  horarioChevron: { color: theme.textMuted, fontSize: 14 },
   horarioDia: { gap: 2 },
   horarioDiaTitulo: { color: theme.primary, fontSize: 14, fontWeight: '700' },
   horarioTexto: { color: theme.text, fontSize: 14, lineHeight: 19 },

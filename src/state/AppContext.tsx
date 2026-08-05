@@ -1,8 +1,24 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { AccessibilityInfo, Alert, AppState } from 'react-native';
-import { DiaServicio, getAvisosLinea, getDiaServicio, getLineas, getStopsAround, NearbyResult } from '../services/emt';
+import {
+  DiaServicio,
+  getAvisosLinea,
+  getDiaServicio,
+  getLineas,
+  getStopsAround,
+  NearbyResult,
+} from '../services/emt';
 import { asegurarPermisoNotificaciones, avisar } from '../services/notificaciones';
 import { Linea, Parada } from '../types';
 
@@ -199,7 +215,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (permission.status !== 'granted') {
           Alert.alert(
             'Permiso denegado',
-            'Necesito permiso de ubicación para mostrarte las paradas más cercanas.'
+            'Necesito permiso de ubicación para mostrarte las paradas más cercanas.',
           );
           return;
         }
@@ -253,7 +269,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const isFavorite = useCallback(
     (stopCode: string) => favorites.some((f) => f.stopCode === stopCode),
-    [favorites]
+    [favorites],
   );
 
   const addFavorite = useCallback(
@@ -264,7 +280,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await persistFavorites([...favorites, parada]);
       setMessage(`${parada.stopName} añadida a favoritos.`);
     },
-    [favorites, persistFavorites]
+    [favorites, persistFavorites],
   );
 
   const removeFavorite = useCallback(
@@ -275,12 +291,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setMessage(`${removed.stopName} quitada de favoritos.`);
       }
     },
-    [favorites, persistFavorites]
+    [favorites, persistFavorites],
   );
 
   const isFavoriteLinea = useCallback(
     (lin: string) => favoriteLineas.includes(lin),
-    [favoriteLineas]
+    [favoriteLineas],
   );
 
   const toggleFavoriteLinea = useCallback(
@@ -291,7 +307,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await AsyncStorage.setItem(STORAGE_FAV_LINEAS, JSON.stringify(next));
       setMessage(sigue ? `Ya no sigues la línea ${lin}.` : `Siguiendo la línea ${lin}.`);
     },
-    [favoriteLineas]
+    [favoriteLineas],
   );
 
   const setNotificacionesActivas = useCallback(async (activas: boolean) => {
@@ -409,7 +425,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setNotificacionesActivas,
       umbralMin,
       setUmbralMin,
-    ]
+    ],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
