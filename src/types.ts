@@ -8,7 +8,6 @@ export interface Linea {
   descripcion: string;
   colorFondo: string;
   colorTexto: string;
-  orden: number;
 }
 
 export interface Parada {

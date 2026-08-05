@@ -1,4 +1,5 @@
 import { Linea, Parada, Tiempo } from '../types';
+import { compararLineas } from '../utils/ordenLineas';
 import { toNumber } from '../utils/text';
 
 // API oficial de EMT Madrid (MobilityLabs), HTTPS. Documentación:
@@ -479,13 +480,14 @@ function textoParaFondo(hex: string): string {
 
 /**
  * Listado de líneas. Se usa la v2 porque, además de los nombres, devuelve el
- * `color` corporativo y el `order` oficial de cada línea.
+ * `color` corporativo de cada línea. El `order` de la API resulta poco intuitivo,
+ * así que se ordena en pantalla por etiqueta en orden natural (ver ordenarLineas).
  */
 export async function getLineas(): Promise<Linea[]> {
   const json = await apiGet(`/v2/transport/busemtmad/lines/info/${todayRef()}/`);
   const arr: any[] = Array.isArray(json?.data) ? json.data : [];
   return arr
-    .map((l, index): Linea => {
+    .map((l): Linea => {
       const label = normalizeLabel(l?.label ?? l?.line);
       const nameA = String(l?.nameA ?? '').trim();
       const nameB = String(l?.nameB ?? '').trim();
@@ -500,11 +502,10 @@ export async function getLineas(): Promise<Linea[]> {
         descripcion: [nameA, nameB].filter(Boolean).join(' - '),
         colorFondo: color,
         colorTexto: textoParaFondo(color),
-        orden: toNumber(l?.order) ?? index,
       };
     })
     .filter((l) => l.lin)
-    .sort((a, b) => a.orden - b.orden || a.lin.localeCompare(b.lin));
+    .sort((a, b) => compararLineas(a.lin, b.lin));
 }
 
 /**
