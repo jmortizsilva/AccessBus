@@ -1,7 +1,8 @@
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import CampoBusqueda from '../components/CampoBusqueda';
 import ParadaRow from '../components/ParadaRow';
 import { buscarParadas, paradaDelIndice } from '../data/red';
 import { BuscarStackParamList } from '../navigation/types';
@@ -39,21 +40,11 @@ export default function BuscarScreen() {
         Buscar
       </Text>
 
-      {/*
-        Input NO controlado (sin `value`): con la arquitectura nueva de RN, un
-        TextInput controlado duplica el texto al dictar en iOS, porque el
-        reconciliador reaplica el valor mientras el dictado sigue insertando.
-        Rastreamos el texto por onChangeText, que es lo único que necesitamos.
-      */}
-      <TextInput
+      <CampoBusqueda
         onChangeText={setQuery}
         placeholder="Nombre de parada o de calle, o número de parada"
-        placeholderTextColor={theme.textMuted}
-        style={styles.input}
-        returnKeyType="search"
         accessibilityLabel="Buscar parada"
         accessibilityHint="Escribe el nombre de una parada o calle, o el número exacto de una parada"
-        autoCorrect={false}
       />
 
       {/* Número de parada: acceso directo, sin necesidad de buscar. */}
@@ -126,14 +117,6 @@ export default function BuscarScreen() {
 const styles = StyleSheet.create({
   content: { paddingTop: 24, paddingHorizontal: 16, paddingBottom: 40, gap: 14 },
   title: { color: theme.textStrong, fontSize: 34, fontWeight: '700' },
-  input: {
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    minHeight: 44,
-    fontSize: 17,
-    color: theme.textStrong,
-    backgroundColor: theme.card,
-  },
   sectionHeader: { color: theme.text, fontSize: 18, fontWeight: '600', marginTop: 6 },
   card: { backgroundColor: theme.card, borderRadius: 16, overflow: 'hidden' },
   note: { color: theme.textMuted, fontSize: 15 },

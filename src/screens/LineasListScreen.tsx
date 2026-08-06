@@ -1,19 +1,13 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import CampoBusqueda from '../components/CampoBusqueda';
 import { LineasStackParamList } from '../navigation/types';
 import { useApp } from '../state/AppContext';
 import { hexColor, theme } from '../theme';
 import { Linea } from '../types';
+import { ordenarLineas } from '../utils/ordenLineas';
 import { normalizeText } from '../utils/text';
 
 type Nav = NativeStackNavigationProp<LineasStackParamList, 'LineasList'>;
@@ -29,16 +23,20 @@ export default function LineasListScreen() {
     }, [refreshLineas]),
   );
 
+  // Orden lógico SIEMPRE en pantalla: la caché puede traer el orden viejo de la
+  // API (se guarda 7 días), así que reordenamos aquí, no solo al descargar.
+  const ordenadas = useMemo(() => ordenarLineas(lineas), [lineas]);
+
   // Filtro por número de línea o por destino (son 236 líneas).
   const filtradas = useMemo(() => {
     const q = normalizeText(query);
     if (!q) {
-      return lineas;
+      return ordenadas;
     }
-    return lineas.filter(
+    return ordenadas.filter(
       (l) => normalizeText(l.lin).includes(q) || normalizeText(l.descripcion).includes(q),
     );
-  }, [lineas, query]);
+  }, [ordenadas, query]);
 
   return (
     <ScrollView
@@ -49,15 +47,11 @@ export default function LineasListScreen() {
         Líneas
       </Text>
 
-      <TextInput
-        value={query}
+      <CampoBusqueda
         onChangeText={setQuery}
         placeholder="Filtrar por número o destino"
-        placeholderTextColor={theme.textMuted}
-        style={styles.input}
         accessibilityLabel="Filtrar líneas"
         accessibilityHint="Escribe el número de una línea o parte de su destino"
-        autoCorrect={false}
       />
 
       {loadingLineas && lineas.length === 0 && (
@@ -127,14 +121,6 @@ function LineaRow({
 const styles = StyleSheet.create({
   content: { paddingTop: 24, paddingHorizontal: 16, paddingBottom: 40, gap: 14 },
   title: { color: theme.textStrong, fontSize: 34, fontWeight: '700' },
-  input: {
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    minHeight: 44,
-    fontSize: 17,
-    color: theme.textStrong,
-    backgroundColor: theme.card,
-  },
   count: { color: theme.textMuted, fontSize: 13 },
   card: { backgroundColor: theme.card, borderRadius: 16, overflow: 'hidden' },
   note: { color: theme.textMuted, fontSize: 15 },
