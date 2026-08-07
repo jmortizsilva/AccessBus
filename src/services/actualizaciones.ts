@@ -23,8 +23,11 @@ import { AccessibilityInfo, Alert, AppState } from 'react-native';
  */
 export const NOVEDADES = [
   'Buscar paradas por nombre, ahora completo y sin conexión.',
-  'La pantalla de parada junta los próximos autobuses y las líneas que pasan.',
+  'En cada parada, los próximos autobuses y las líneas que pasan van juntos.',
+  'Las líneas aparecen en orden lógico, y el buscador tiene botón Cancelar.',
+  'En el rotor de una parada, cada línea dice hacia dónde va.',
   'Al abrir una línea, sus horarios se despliegan solo si los pides.',
+  'Al confirmar una acción: un aviso breve, con voz y una pequeña vibración.',
 ];
 
 const CLAVE_ULTIMO_ID = 'actualizaciones.ultimoUpdateId';
