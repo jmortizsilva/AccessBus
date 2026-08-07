@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { AccessibilityInfo, Alert, AppState } from 'react-native';
+import { Alert, AppState } from 'react-native';
 import {
   DiaServicio,
   getAvisosLinea,
@@ -47,6 +47,14 @@ export interface CurrentLocation {
   name?: string;
 }
 
+/** Aviso transitorio (toast) que confirma una acción: se muestra, se anuncia y se va. */
+export interface AvisoUI {
+  texto: string;
+  tipo: 'exito' | 'error';
+  /** Id incremental: fuerza a re-mostrarlo aunque el texto se repita. */
+  id: number;
+}
+
 export type NearbyStop = NearbyResult;
 
 interface AppContextValue {
@@ -59,7 +67,6 @@ interface AppContextValue {
   loadingLineas: boolean;
   loadingNearby: boolean;
   loadingLocation: boolean;
-  message: string;
   refreshLineas: (force?: boolean) => Promise<void>;
   refreshLocation: (opts?: { silent?: boolean }) => Promise<void>;
   setSearchRadiusM: (meters: number) => Promise<void>;
@@ -74,6 +81,9 @@ interface AppContextValue {
   setNotificacionesActivas: (activas: boolean) => Promise<void>;
   umbralMin: number;
   setUmbralMin: (min: number) => Promise<void>;
+  /** Último aviso transitorio (o null). Lo pinta y anuncia el componente Aviso. */
+  aviso: AvisoUI | null;
+  descartarAviso: () => void;
 }
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);
@@ -91,10 +101,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loadingLineas, setLoadingLineas] = useState(false);
   const [loadingNearby, setLoadingNearby] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
-  const [message, setMessage] = useState('');
+  const [aviso, setAviso] = useState<AvisoUI | null>(null);
 
   const lineasRef = useRef<Linea[]>([]);
   lineasRef.current = lineas;
+
+  // Id incremental para que dos avisos con el mismo texto se distingan.
+  const avisoIdRef = useRef(0);
+  const notificar = useCallback((texto: string, tipo: 'exito' | 'error' = 'exito') => {
+    avisoIdRef.current += 1;
+    setAviso({ texto, tipo, id: avisoIdRef.current });
+  }, []);
+  const descartarAviso = useCallback(() => setAviso(null), []);
 
   // Carga inicial desde caché.
   useEffect(() => {
@@ -137,12 +155,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (message.trim()) {
-      void AccessibilityInfo.announceForAccessibility(message);
-    }
-  }, [message]);
-
   // Tipo de día de servicio (laborable/sábado/festivo) y aviso de huelga.
   useEffect(() => {
     let active = true;
@@ -168,94 +180,100 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .then((r) => active && setNearby(r))
       .catch((error) => {
         if (active) {
-          setMessage(`No se pudieron cargar las paradas cercanas: ${errText(error)}`);
+          notificar(`No se pudieron cargar las paradas cercanas: ${errText(error)}`, 'error');
         }
       })
       .finally(() => active && setLoadingNearby(false));
     return () => {
       active = false;
     };
-  }, [currentLocation, searchRadiusM]);
+  }, [currentLocation, searchRadiusM, notificar]);
 
-  const refreshLineas = useCallback(async (force = false) => {
-    if (!force) {
-      const ts = Number((await AsyncStorage.getItem(STORAGE_LINEAS_TS)) ?? 0);
-      if (lineasRef.current.length > 0 && Date.now() - ts < STATIC_TTL_MS) {
-        return;
-      }
-    }
-    setLoadingLineas(true);
-    try {
-      const data = await getLineas();
-      if (data.length > 0) {
-        setLineas(data);
-        await Promise.all([
-          AsyncStorage.setItem(STORAGE_LINEAS, JSON.stringify(data)),
-          AsyncStorage.setItem(STORAGE_LINEAS_TS, String(Date.now())),
-        ]);
-      }
-    } catch (error) {
-      if (lineasRef.current.length === 0) {
-        setMessage(`No se pudieron cargar las líneas: ${errText(error)}`);
-      }
-    } finally {
-      setLoadingLineas(false);
-    }
-  }, []);
-
-  const refreshLocation = useCallback(async (opts?: { silent?: boolean }) => {
-    const silent = opts?.silent ?? false;
-    try {
-      let permission = await Location.getForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        if (silent) {
-          return;
-        }
-        permission = await Location.requestForegroundPermissionsAsync();
-        if (permission.status !== 'granted') {
-          Alert.alert(
-            'Permiso denegado',
-            'Necesito permiso de ubicación para mostrarte las paradas más cercanas.',
-          );
+  const refreshLineas = useCallback(
+    async (force = false) => {
+      if (!force) {
+        const ts = Number((await AsyncStorage.getItem(STORAGE_LINEAS_TS)) ?? 0);
+        if (lineasRef.current.length > 0 && Date.now() - ts < STATIC_TTL_MS) {
           return;
         }
       }
-      if (!silent) {
-        setLoadingLocation(true);
-      }
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      let name: string | undefined;
+      setLoadingLineas(true);
       try {
-        const geocoded = await Location.reverseGeocodeAsync({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
+        const data = await getLineas();
+        if (data.length > 0) {
+          setLineas(data);
+          await Promise.all([
+            AsyncStorage.setItem(STORAGE_LINEAS, JSON.stringify(data)),
+            AsyncStorage.setItem(STORAGE_LINEAS_TS, String(Date.now())),
+          ]);
+        }
+      } catch (error) {
+        if (lineasRef.current.length === 0) {
+          notificar(`No se pudieron cargar las líneas: ${errText(error)}`, 'error');
+        }
+      } finally {
+        setLoadingLineas(false);
+      }
+    },
+    [notificar],
+  );
+
+  const refreshLocation = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = opts?.silent ?? false;
+      try {
+        let permission = await Location.getForegroundPermissionsAsync();
+        if (permission.status !== 'granted') {
+          if (silent) {
+            return;
+          }
+          permission = await Location.requestForegroundPermissionsAsync();
+          if (permission.status !== 'granted') {
+            Alert.alert(
+              'Permiso denegado',
+              'Necesito permiso de ubicación para mostrarte las paradas más cercanas.',
+            );
+            return;
+          }
+        }
+        if (!silent) {
+          setLoadingLocation(true);
+        }
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
         });
-        name = geocoded[0]?.street ?? geocoded[0]?.city ?? undefined;
-      } catch {
-        // opcional
+        let name: string | undefined;
+        try {
+          const geocoded = await Location.reverseGeocodeAsync({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+          name = geocoded[0]?.street ?? geocoded[0]?.city ?? undefined;
+        } catch {
+          // opcional
+        }
+        const loc: CurrentLocation = {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          name,
+        };
+        setCurrentLocation(loc);
+        await AsyncStorage.setItem(STORAGE_LOCATION, JSON.stringify(loc));
+        if (!silent) {
+          notificar('Ubicación actualizada. Mostrando paradas cercanas.');
+        }
+      } catch (error) {
+        if (!silent) {
+          notificar(`Error con la ubicación: ${errText(error)}`, 'error');
+        }
+      } finally {
+        if (!silent) {
+          setLoadingLocation(false);
+        }
       }
-      const loc: CurrentLocation = {
-        lat: position.coords.latitude,
-        lon: position.coords.longitude,
-        name,
-      };
-      setCurrentLocation(loc);
-      await AsyncStorage.setItem(STORAGE_LOCATION, JSON.stringify(loc));
-      if (!silent) {
-        setMessage('Ubicación actualizada. Mostrando paradas cercanas.');
-      }
-    } catch (error) {
-      if (!silent) {
-        setMessage(`Error con la ubicación: ${errText(error)}`);
-      }
-    } finally {
-      if (!silent) {
-        setLoadingLocation(false);
-      }
-    }
-  }, []);
+    },
+    [notificar],
+  );
 
   const setSearchRadiusM = useCallback(async (meters: number) => {
     setSearchRadiusState(meters);
@@ -278,9 +296,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
       await persistFavorites([...favorites, parada]);
-      setMessage(`${parada.stopName} añadida a favoritos.`);
+      notificar(`${parada.stopName} añadida a favoritos.`);
     },
-    [favorites, persistFavorites],
+    [favorites, persistFavorites, notificar],
   );
 
   const removeFavorite = useCallback(
@@ -288,10 +306,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const removed = favorites.find((f) => f.stopCode === stopCode);
       await persistFavorites(favorites.filter((f) => f.stopCode !== stopCode));
       if (removed) {
-        setMessage(`${removed.stopName} quitada de favoritos.`);
+        notificar(`${removed.stopName} quitada de favoritos.`);
       }
     },
-    [favorites, persistFavorites],
+    [favorites, persistFavorites, notificar],
   );
 
   const isFavoriteLinea = useCallback(
@@ -305,22 +323,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const next = sigue ? favoriteLineas.filter((l) => l !== lin) : [...favoriteLineas, lin];
       setFavoriteLineas(next);
       await AsyncStorage.setItem(STORAGE_FAV_LINEAS, JSON.stringify(next));
-      setMessage(sigue ? `Ya no sigues la línea ${lin}.` : `Siguiendo la línea ${lin}.`);
+      notificar(sigue ? `Ya no sigues la línea ${lin}.` : `Siguiendo la línea ${lin}.`);
     },
-    [favoriteLineas],
+    [favoriteLineas, notificar],
   );
 
-  const setNotificacionesActivas = useCallback(async (activas: boolean) => {
-    if (activas) {
-      const ok = await asegurarPermisoNotificaciones();
-      if (!ok) {
-        setMessage('No se han concedido los permisos de notificaciones.');
-        return;
+  const setNotificacionesActivas = useCallback(
+    async (activas: boolean) => {
+      if (activas) {
+        const ok = await asegurarPermisoNotificaciones();
+        if (!ok) {
+          notificar('No se han concedido los permisos de notificaciones.', 'error');
+          return;
+        }
       }
-    }
-    setNotifState(activas);
-    await AsyncStorage.setItem(STORAGE_NOTIF, String(activas));
-  }, []);
+      setNotifState(activas);
+      await AsyncStorage.setItem(STORAGE_NOTIF, String(activas));
+    },
+    [notificar],
+  );
 
   const setUmbralMin = useCallback(async (min: number) => {
     setUmbralState(min);
@@ -386,7 +407,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       loadingLineas,
       loadingNearby,
       loadingLocation,
-      message,
       refreshLineas,
       refreshLocation,
       setSearchRadiusM,
@@ -400,6 +420,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setNotificacionesActivas,
       umbralMin,
       setUmbralMin,
+      aviso,
+      descartarAviso,
     }),
     [
       lineas,
@@ -411,7 +433,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       loadingLineas,
       loadingNearby,
       loadingLocation,
-      message,
       refreshLineas,
       refreshLocation,
       setSearchRadiusM,
@@ -425,6 +446,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setNotificacionesActivas,
       umbralMin,
       setUmbralMin,
+      aviso,
+      descartarAviso,
     ],
   );
 

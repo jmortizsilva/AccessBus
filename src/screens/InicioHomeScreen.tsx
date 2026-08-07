@@ -21,7 +21,6 @@ export default function InicioHomeScreen() {
     loadingLocation,
     loadingNearby,
     refreshLocation,
-    message,
   } = useApp();
 
   // La ubicación se actualiza automáticamente al entrar en Inicio (silenciosa).
@@ -108,8 +107,6 @@ export default function InicioHomeScreen() {
           ))}
         </View>
       )}
-
-      {message ? <Text style={styles.statusNote}>{message}</Text> : null}
     </ScrollView>
   );
 }
@@ -141,5 +138,4 @@ const styles = StyleSheet.create({
   sectionHeader: { color: theme.text, fontSize: 20, fontWeight: '600', marginTop: 6 },
   card: { backgroundColor: theme.card, borderRadius: 16, overflow: 'hidden' },
   note: { color: theme.textMuted, fontSize: 15 },
-  statusNote: { color: theme.textMuted, fontSize: 13, marginTop: 8 },
 });
