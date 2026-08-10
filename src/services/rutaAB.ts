@@ -19,12 +19,15 @@ export interface ResultadoRutaAB {
 
 // Radios crecientes: si no hay ninguna parada cerca, se amplía antes de rendirse.
 const RADIOS_M = [800, 1500, 3000];
+// Bastantes candidatos por lado: con solo los más próximos se pierden líneas
+// útiles cuando hay varias paradas de otras líneas todavía más cerca.
+const LIMITE_CANDIDATOS = 20;
 const TOPE_LINEAS_TRANSBORDO = 10;
 const LIMITE_OPCIONES = 8;
 
 function candidatosEnRadiosCrecientes(punto: PuntoGeo): CandidatoParada[] {
   for (const radio of RADIOS_M) {
-    const candidatos = paradasCercanas(punto.lat, punto.lon, radio);
+    const candidatos = paradasCercanas(punto.lat, punto.lon, radio, LIMITE_CANDIDATOS);
     if (candidatos.length > 0) {
       return candidatos;
     }

@@ -14,17 +14,21 @@ type Nav = NativeStackNavigationProp<BuscarStackParamList, 'RutaABResultado'>;
 type Ruta = RouteProp<BuscarStackParamList, 'RutaABResultado'>;
 
 function etiquetaOpcion(opcion: OpcionRuta): string {
-  const totalAndando = formatDistance(opcion.metrosOrigen + opcion.metrosDestino);
   if (opcion.tipo === 'directo') {
+    const totalAndando = formatDistance(opcion.metrosOrigen + opcion.metrosDestino);
     return (
       `Línea ${opcion.lin}, hacia ${opcion.destino}. Sube en ${opcion.origen.stopName}. ` +
       `Baja en ${opcion.bajada.stopName}. ${opcion.paradasEnBus} paradas en el bus. ` +
       `${totalAndando} andando en total.`
     );
   }
+  const totalAndando = formatDistance(
+    opcion.metrosOrigen + opcion.metrosTransbordo + opcion.metrosDestino,
+  );
   return (
-    `Línea ${opcion.primero.lin} desde ${opcion.primero.origen.stopName} hasta ${opcion.primero.transbordo.stopName}, ` +
-    `${opcion.primero.paradasEnBus} paradas. Transbordo a la línea ${opcion.segundo.lin} hasta ` +
+    `Línea ${opcion.primero.lin} desde ${opcion.primero.origen.stopName} hasta ${opcion.primero.bajada.stopName}, ` +
+    `${opcion.primero.paradasEnBus} paradas. Cambia andando ${formatDistance(opcion.metrosTransbordo)} ` +
+    `hasta ${opcion.segundo.subida.stopName} y coge la línea ${opcion.segundo.lin} hasta ` +
     `${opcion.segundo.bajada.stopName}, ${opcion.segundo.paradasEnBus} paradas más. ` +
     `${totalAndando} andando en total.`
   );
@@ -185,11 +189,15 @@ function OpcionRow({
         <Text style={styles.badge}>Línea {opcion.segundo.lin}</Text>
       </View>
       <Text style={styles.filaTexto}>Sube en {opcion.primero.origen.stopName}</Text>
-      <Text style={styles.filaTexto}>Transbordo en {opcion.primero.transbordo.stopName}</Text>
+      <Text style={styles.filaTexto}>Baja en {opcion.primero.bajada.stopName}</Text>
+      <Text style={styles.meta}>
+        🚶 {formatDistance(opcion.metrosTransbordo)} hasta {opcion.segundo.subida.stopName}
+      </Text>
       <Text style={styles.filaTexto}>Baja en {opcion.segundo.bajada.stopName}</Text>
       <Text style={styles.meta}>
         {opcion.primero.paradasEnBus + opcion.segundo.paradasEnBus} paradas en total ·{' '}
-        {formatDistance(opcion.metrosOrigen + opcion.metrosDestino)} andando
+        {formatDistance(opcion.metrosOrigen + opcion.metrosTransbordo + opcion.metrosDestino)}{' '}
+        andando
       </Text>
     </Pressable>
   );

@@ -1,5 +1,6 @@
 import { CandidatoParada, Enlace, lineasDeParada } from '../data/red';
 import { Parada } from '../types';
+import { haversineMeters } from './distance';
 
 /** Consulta de qué líneas pasan por una parada; inyectable para poder testear
  *  con datos fabricados a mano sin depender de la red real. */
@@ -27,9 +28,11 @@ export interface TramoDirecto {
 
 export interface TramoConTransbordo {
   tipo: 'transbordo';
-  primero: { lin: string; dir: 1 | 2; origen: Parada; transbordo: Parada; paradasEnBus: number };
-  segundo: { lin: string; dir: 1 | 2; transbordo: Parada; bajada: Parada; paradasEnBus: number };
+  primero: { lin: string; dir: 1 | 2; origen: Parada; bajada: Parada; paradasEnBus: number };
+  segundo: { lin: string; dir: 1 | 2; subida: Parada; bajada: Parada; paradasEnBus: number };
   metrosOrigen: number;
+  /** Distancia a pie entre donde se baja de la primera línea y donde se sube a la segunda. */
+  metrosTransbordo: number;
   metrosDestino: number;
 }
 
@@ -131,18 +134,59 @@ export function lineasCandidatas(
   return [...porClave.values()].sort((a, b) => a.parada.metros - b.parada.metros).slice(0, tope);
 }
 
+/** Cuánto se está dispuesto a andar entre la parada de bajada y la de subida de un transbordo. */
+export const UMBRAL_TRANSBORDO_M = 250;
+
+export interface ParTransbordo {
+  /** Parada donde se baja de la primera línea. */
+  bajada: Parada;
+  /** Parada donde se sube a la segunda línea. */
+  subida: Parada;
+  /** Distancia a pie entre ambas (0 si es literalmente la misma parada). */
+  metros: number;
+}
+
 /**
- * Primera parada común entre dos secuencias ya recortadas: `desdeOrigen` debe
- * empezar en la parada de subida (o después) y `hastaDestino` debe terminar
- * en la de bajada (o antes). Devuelve la primera coincidencia según el orden
- * de `desdeOrigen`, es decir, el transbordo más temprano posible en esa línea.
+ * Primer transbordo posible entre dos secuencias ya recortadas: `desdeOrigen`
+ * debe empezar en la parada de subida (o después) y `hastaDestino` debe
+ * terminar en la de bajada (o antes).
+ *
+ * NO exige la misma parada exacta: en Madrid casi ningún transbordo real es
+ * así (dos líneas que se cruzan suelen tener paradas distintas a un puñado de
+ * metros, a cada lado de la calle o del cruce). Se acepta cualquier pareja a
+ * `UMBRAL_TRANSBORDO_M` o menos, priorizando el transbordo más temprano según
+ * el orden de `desdeOrigen` y, dentro de esa parada, el más cercano a pie.
  */
 export function buscarTransbordo(
   desdeOrigen: Parada[],
   hastaDestino: Parada[],
-): Parada | undefined {
-  const enSegundo = new Set(hastaDestino.map((p) => p.stopCode));
-  return desdeOrigen.find((p) => enSegundo.has(p.stopCode));
+  umbralM: number = UMBRAL_TRANSBORDO_M,
+): ParTransbordo | undefined {
+  for (const bajada of desdeOrigen) {
+    let mejor: ParTransbordo | undefined;
+    for (const subida of hastaDestino) {
+      // La coincidencia exacta no necesita coordenadas: es la mejor posible.
+      if (bajada.stopCode === subida.stopCode) {
+        return { bajada, subida, metros: 0 };
+      }
+      if (
+        bajada.lat === undefined ||
+        bajada.lon === undefined ||
+        subida.lat === undefined ||
+        subida.lon === undefined
+      ) {
+        continue;
+      }
+      const metros = haversineMeters(bajada.lat, bajada.lon, subida.lat, subida.lon);
+      if (metros <= umbralM && (!mejor || metros < mejor.metros)) {
+        mejor = { bajada, subida, metros };
+      }
+    }
+    if (mejor) {
+      return mejor;
+    }
+  }
+  return undefined;
 }
 
 export interface CandidatoTransbordo {
@@ -178,8 +222,8 @@ export function construirTramoConTransbordo(
     return undefined;
   }
 
-  const iTransbordo1 = tramoPrimero.findIndex((p) => p.stopCode === transbordo.stopCode);
-  const iTransbordo2 = tramoSegundo.findIndex((p) => p.stopCode === transbordo.stopCode);
+  const iBajada = tramoPrimero.findIndex((p) => p.stopCode === transbordo.bajada.stopCode);
+  const iSubida = tramoSegundo.findIndex((p) => p.stopCode === transbordo.subida.stopCode);
 
   return {
     tipo: 'transbordo',
@@ -187,23 +231,26 @@ export function construirTramoConTransbordo(
       lin: candidato.primero.lin,
       dir: candidato.primero.dir,
       origen: candidato.primero.origen.parada,
-      transbordo,
-      paradasEnBus: iTransbordo1,
+      bajada: transbordo.bajada,
+      paradasEnBus: iBajada,
     },
     segundo: {
       lin: candidato.segundo.lin,
       dir: candidato.segundo.dir,
-      transbordo,
+      subida: transbordo.subida,
       bajada: candidato.segundo.destino.parada,
-      paradasEnBus: tramoSegundo.length - 1 - iTransbordo2,
+      paradasEnBus: tramoSegundo.length - 1 - iSubida,
     },
     metrosOrigen: candidato.primero.origen.metros,
+    metrosTransbordo: transbordo.metros,
     metrosDestino: candidato.segundo.destino.metros,
   };
 }
 
 function metrosAndando(opcion: OpcionRuta): number {
-  return opcion.metrosOrigen + opcion.metrosDestino;
+  return opcion.tipo === 'directo'
+    ? opcion.metrosOrigen + opcion.metrosDestino
+    : opcion.metrosOrigen + opcion.metrosTransbordo + opcion.metrosDestino;
 }
 
 /** Menos transbordos primero; a igualdad, menos distancia total a pie. */

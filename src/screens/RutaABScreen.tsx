@@ -1,11 +1,11 @@
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import CampoBusqueda from '../components/CampoBusqueda';
 import { buscarParadas } from '../data/red';
 import { BuscarStackParamList } from '../navigation/types';
-import { geocodificarDireccion } from '../services/direcciones';
+import { geocodificarDireccion, ResultadoDireccion } from '../services/direcciones';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { Parada, PuntoGeo } from '../types';
@@ -14,6 +14,12 @@ type Nav = NativeStackNavigationProp<BuscarStackParamList, 'RutaAB'>;
 
 const MIN_LETRAS = 2;
 const MAX_RESULTADOS_PARADA = 8;
+// La geocodificación de direcciones necesita más contexto que el buscador de
+// paradas para no lanzar peticiones sobre un texto todavía sin sentido.
+const MIN_LETRAS_DIRECCION = 5;
+// Espera tras la última tecla antes de geocodificar, para no disparar una
+// petición por cada letra mientras el usuario sigue escribiendo.
+const DEBOUNCE_DIRECCION_MS = 500;
 
 export default function RutaABScreen() {
   const navigation = useNavigation<Nav>();
@@ -94,6 +100,7 @@ function SelectorPunto({
   miUbicacion,
 }: SelectorPuntoProps) {
   const [query, setQuery] = useState('');
+  const [sugerenciasDireccion, setSugerenciasDireccion] = useState<ResultadoDireccion[]>([]);
   const [buscandoDireccion, setBuscandoDireccion] = useState(false);
   const [errorDireccion, setErrorDireccion] = useState('');
 
@@ -103,6 +110,45 @@ function SelectorPunto({
     [q],
   );
 
+  // Sugerencias de dirección mientras se escribe: piden más letras que las
+  // paradas (geocodificar "Pra" no lleva a ningún sitio) y esperan un poco
+  // tras la última tecla, para no lanzar una petición por cada letra.
+  useEffect(() => {
+    if (q.length < MIN_LETRAS_DIRECCION) {
+      setSugerenciasDireccion([]);
+      setErrorDireccion('');
+      setBuscandoDireccion(false);
+      return;
+    }
+    let activo = true;
+    setBuscandoDireccion(true);
+    setErrorDireccion('');
+    const temporizador = setTimeout(() => {
+      geocodificarDireccion(q)
+        .then((resultados) => {
+          if (!activo) {
+            return;
+          }
+          setSugerenciasDireccion(resultados);
+          if (resultados.length === 0) {
+            setErrorDireccion('No se ha encontrado esa dirección.');
+          }
+        })
+        .catch((error) => {
+          if (activo) {
+            setErrorDireccion(
+              `No se ha podido buscar la dirección: ${String((error as Error).message ?? error)}`,
+            );
+          }
+        })
+        .finally(() => activo && setBuscandoDireccion(false));
+    }, DEBOUNCE_DIRECCION_MS);
+    return () => {
+      activo = false;
+      clearTimeout(temporizador);
+    };
+  }, [q]);
+
   const elegirParada = (parada: Parada) => {
     if (parada.lat === undefined || parada.lon === undefined) {
       return;
@@ -111,24 +157,9 @@ function SelectorPunto({
     setQuery('');
   };
 
-  const buscarDireccion = async () => {
-    setBuscandoDireccion(true);
-    setErrorDireccion('');
-    try {
-      const [resultado] = await geocodificarDireccion(q);
-      if (resultado) {
-        onSeleccionar(resultado);
-        setQuery('');
-      } else {
-        setErrorDireccion('No se ha encontrado esa dirección.');
-      }
-    } catch (error) {
-      setErrorDireccion(
-        `No se ha podido buscar la dirección: ${String((error as Error).message ?? error)}`,
-      );
-    } finally {
-      setBuscandoDireccion(false);
-    }
+  const elegirDireccion = (resultado: ResultadoDireccion) => {
+    onSeleccionar(resultado);
+    setQuery('');
   };
 
   if (punto) {
@@ -193,23 +224,29 @@ function SelectorPunto({
         </View>
       )}
 
-      {q.length >= MIN_LETRAS && (
-        <Pressable
-          style={styles.buscarDireccionButton}
-          onPress={() => void buscarDireccion()}
-          disabled={buscandoDireccion}
-          accessibilityRole="button"
-          accessibilityLabel={`Buscar «${q}» como dirección`}
-          accessibilityHint="Úsalo si no es el nombre de una parada, sino una dirección completa">
-          <Text style={styles.buscarDireccionText}>
-            {buscandoDireccion ? 'Buscando dirección…' : `🔍 Buscar «${q}» como dirección`}
-          </Text>
-        </Pressable>
+      {sugerenciasDireccion.length > 0 && (
+        <View style={styles.listaResultados} accessibilityLabel="Sugerencias de dirección">
+          {sugerenciasDireccion.map((resultado, i) => (
+            <Pressable
+              key={`${resultado.lat}-${resultado.lon}-${i}`}
+              style={styles.resultadoRow}
+              onPress={() => elegirDireccion(resultado)}
+              accessibilityRole="button"
+              accessibilityLabel={`Dirección: ${resultado.etiqueta}`}
+              accessibilityHint="Toca dos veces para elegir esta dirección">
+              <Text style={styles.resultadoTitulo}>📍 {resultado.etiqueta}</Text>
+            </Pressable>
+          ))}
+        </View>
       )}
       {buscandoDireccion && (
         <ActivityIndicator color={theme.primary} accessibilityLabel="Buscando dirección" />
       )}
-      {errorDireccion ? <Text style={styles.note}>{errorDireccion}</Text> : null}
+      {!buscandoDireccion && errorDireccion ? (
+        <Text style={styles.note} accessibilityLiveRegion="polite">
+          {errorDireccion}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -241,15 +278,6 @@ const styles = StyleSheet.create({
   },
   resultadoTitulo: { color: theme.textStrong, fontSize: 15, fontWeight: '600' },
   resultadoMeta: { color: theme.textMuted, fontSize: 12 },
-  buscarDireccionButton: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.border,
-  },
-  buscarDireccionText: { color: theme.text, fontSize: 15, fontWeight: '600' },
   note: { color: theme.textMuted, fontSize: 13 },
   buttonPrimary: {
     borderRadius: 12,

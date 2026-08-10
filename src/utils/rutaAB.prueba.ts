@@ -126,14 +126,48 @@ describe('lineasCandidatas', () => {
   });
 });
 
+// Coordenadas auxiliares: 0.001º de latitud son ~111 m.
+function paradaEn(stopCode: string, lat: number, lon = 0): Parada {
+  return { stopCode, stopName: `Parada ${stopCode}`, lat, lon };
+}
+
 describe('buscarTransbordo', () => {
-  it('devuelve la primera parada común según el orden de la primera secuencia', () => {
+  it('devuelve la primera parada común (misma parada, 0 metros) según el orden de la primera secuencia', () => {
     const desdeOrigen = [parada('X'), parada('Y'), parada('Z')];
     const hastaDestino = [parada('W'), parada('Y'), parada('Z')];
-    expect(buscarTransbordo(desdeOrigen, hastaDestino)).toEqual(parada('Y'));
+    expect(buscarTransbordo(desdeOrigen, hastaDestino)).toEqual({
+      bajada: parada('Y'),
+      subida: parada('Y'),
+      metros: 0,
+    });
   });
 
-  it('devuelve undefined si no hay ninguna parada en común', () => {
+  it('acepta un transbordo entre paradas distintas si están dentro del umbral (caso real: líneas que se cruzan)', () => {
+    // A 111 m de diferencia: dentro de los 250 m por defecto.
+    const desdeOrigen = [paradaEn('E1-parada', 0)];
+    const hastaDestino = [paradaEn('L6-parada', 0.001)];
+    const resultado = buscarTransbordo(desdeOrigen, hastaDestino);
+    expect(resultado?.bajada.stopCode).toBe('E1-parada');
+    expect(resultado?.subida.stopCode).toBe('L6-parada');
+    expect(resultado?.metros).toBeGreaterThan(0);
+    expect(resultado?.metros).toBeLessThanOrEqual(250);
+  });
+
+  it('descarta un transbordo si la parada más cercana está por encima del umbral', () => {
+    // ~1110 m de diferencia: muy por encima del umbral por defecto.
+    const desdeOrigen = [paradaEn('E1-parada', 0)];
+    const hastaDestino = [paradaEn('L6-parada', 0.01)];
+    expect(buscarTransbordo(desdeOrigen, hastaDestino)).toBeUndefined();
+  });
+
+  it('respeta un umbral personalizado', () => {
+    const desdeOrigen = [paradaEn('A', 0)];
+    const hastaDestino = [paradaEn('B', 0.001)]; // ~111 m
+    expect(buscarTransbordo(desdeOrigen, hastaDestino, 50)).toBeUndefined();
+    expect(buscarTransbordo(desdeOrigen, hastaDestino, 200)?.subida.stopCode).toBe('B');
+  });
+
+  it('devuelve undefined si no hay ninguna parada en común ni dentro del umbral', () => {
     expect(buscarTransbordo([parada('X')], [parada('Y')])).toBeUndefined();
   });
 });
@@ -148,7 +182,7 @@ describe('construirTramoConTransbordo', () => {
   // Línea 27: D -> TX -> E(bajada) -> F
   const secuenciaSegundo = [parada('D'), parada('TX'), parada('E'), parada('F')];
 
-  it('encuentra el transbordo y cuenta las paradas de cada tramo', () => {
+  it('encuentra el transbordo (misma parada) y cuenta las paradas de cada tramo', () => {
     const tramo = construirTramoConTransbordo(candidato_, secuenciaPrimero, secuenciaSegundo);
     expect(tramo).toEqual({
       tipo: 'transbordo',
@@ -156,22 +190,48 @@ describe('construirTramoConTransbordo', () => {
         lin: '5',
         dir: 1,
         origen: parada('A'),
-        transbordo: parada('TX'),
-        paradasEnBus: 2, // A -> B -> TX
+        bajada: parada('TX'), // A -> B -> TX
+        paradasEnBus: 2,
       },
       segundo: {
         lin: '27',
         dir: 2,
-        transbordo: parada('TX'),
-        bajada: parada('E'),
-        paradasEnBus: 1, // TX -> E
+        subida: parada('TX'),
+        bajada: parada('E'), // TX -> E
+        paradasEnBus: 1,
       },
       metrosOrigen: 80,
+      metrosTransbordo: 0,
       metrosDestino: 40,
     });
   });
 
-  it('devuelve undefined si no hay ningún punto en común entre las dos líneas', () => {
+  it('encuentra el transbordo cuando las dos líneas paran cerca pero no en el mismo código (caso real de Madrid)', () => {
+    // Línea 5: A(subida) -> B -> TXA(baja aquí). Línea 27: D -> TXB(sube aquí, ~111m de TXA) -> E(bajada) -> F.
+    const primeroConParadaCercana = [
+      parada('Z'),
+      parada('A'),
+      parada('B'),
+      { stopCode: 'TXA', stopName: 'Parada TXA', lat: 0, lon: 0 },
+    ];
+    const segundoConParadaCercana = [
+      parada('D'),
+      { stopCode: 'TXB', stopName: 'Parada TXB', lat: 0.001, lon: 0 },
+      parada('E'),
+      parada('F'),
+    ];
+    const tramo = construirTramoConTransbordo(
+      candidato_,
+      primeroConParadaCercana,
+      segundoConParadaCercana,
+    );
+    expect(tramo?.primero.bajada.stopCode).toBe('TXA');
+    expect(tramo?.segundo.subida.stopCode).toBe('TXB');
+    expect(tramo?.metrosTransbordo).toBeGreaterThan(0);
+    expect(tramo?.metrosTransbordo).toBeLessThanOrEqual(250);
+  });
+
+  it('devuelve undefined si no hay ningún punto en común ni cercano entre las dos líneas', () => {
     const sinComun = [parada('D'), parada('E'), parada('F')];
     expect(construirTramoConTransbordo(candidato_, secuenciaPrimero, sinComun)).toBeUndefined();
   });
@@ -201,9 +261,10 @@ describe('ordenarOpciones', () => {
   };
   const transbordoCorto: OpcionRuta = {
     tipo: 'transbordo',
-    primero: { lin: '5', dir: 1, origen: parada('A'), transbordo: parada('T'), paradasEnBus: 1 },
-    segundo: { lin: '27', dir: 1, transbordo: parada('T'), bajada: parada('B'), paradasEnBus: 1 },
+    primero: { lin: '5', dir: 1, origen: parada('A'), bajada: parada('T'), paradasEnBus: 1 },
+    segundo: { lin: '27', dir: 1, subida: parada('T'), bajada: parada('B'), paradasEnBus: 1 },
     metrosOrigen: 10,
+    metrosTransbordo: 0,
     metrosDestino: 10,
   };
   const directoLejos: OpcionRuta = { ...directo, metrosOrigen: 50, metrosDestino: 50 };
