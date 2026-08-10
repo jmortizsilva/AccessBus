@@ -1,5 +1,6 @@
-import { buscarParadas, paradaDelIndice } from './red';
+import { buscarParadas, paradaDelIndice, paradasCercanas } from './red';
 import { normalizeText } from '../utils/text';
+import { haversineMeters } from '../utils/distance';
 
 describe('buscarParadas', () => {
   it('no busca sin texto (el mínimo de letras lo aplica la pantalla)', () => {
@@ -66,5 +67,43 @@ describe('paradaDelIndice', () => {
 
   it('devuelve undefined si la parada no está en el índice', () => {
     expect(paradaDelIndice('0')).toBeUndefined();
+  });
+});
+
+describe('paradasCercanas', () => {
+  // Coordenadas reales de una parada conocida del índice (Vía Lusitana, 3990).
+  const referencia = paradaDelIndice('3990')!;
+
+  it('incluye la propia parada de referencia con metros ~0, la primera', () => {
+    const cercanas = paradasCercanas(referencia.lat!, referencia.lon!, 500);
+    expect(cercanas[0].parada.stopCode).toBe('3990');
+    expect(cercanas[0].metros).toBeLessThan(1);
+  });
+
+  it('devuelve los resultados ordenados de más cerca a más lejos', () => {
+    const cercanas = paradasCercanas(referencia.lat!, referencia.lon!, 1000);
+    for (let i = 1; i < cercanas.length; i++) {
+      expect(cercanas[i].metros).toBeGreaterThanOrEqual(cercanas[i - 1].metros);
+    }
+  });
+
+  it('descarta las paradas fuera del radio pedido', () => {
+    const radio = 300;
+    const cercanas = paradasCercanas(referencia.lat!, referencia.lon!, radio);
+    for (const c of cercanas) {
+      expect(c.metros).toBeLessThanOrEqual(radio);
+      const real = haversineMeters(referencia.lat!, referencia.lon!, c.parada.lat!, c.parada.lon!);
+      expect(c.metros).toBeCloseTo(real, 5);
+    }
+  });
+
+  it('respeta el límite de resultados', () => {
+    const cercanas = paradasCercanas(referencia.lat!, referencia.lon!, 5000, 3);
+    expect(cercanas.length).toBeLessThanOrEqual(3);
+  });
+
+  it('devuelve vacío si no hay ninguna parada dentro del radio', () => {
+    // Un punto en mitad del océano: ninguna parada de Madrid puede estar cerca.
+    expect(paradasCercanas(0, 0, 1000)).toEqual([]);
   });
 });

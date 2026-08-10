@@ -23,6 +23,14 @@ export interface Parada {
   ordenSentido?: number;
 }
 
+/** Un punto geográfico con etiqueta legible, para el planificador de rutas. */
+export interface PuntoGeo {
+  lat: number;
+  lon: number;
+  /** Texto a mostrar/anunciar: nombre de parada, dirección o "Mi ubicación". */
+  etiqueta: string;
+}
+
 export interface Tiempo {
   /** Etiqueta pública de la línea que llega (p.ej. "5", "N1"). */
   linea: string;

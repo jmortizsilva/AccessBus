@@ -1,6 +1,7 @@
 import red from './red.json';
 import { Parada } from '../types';
 import { normalizeText } from '../utils/text';
+import { haversineMeters } from '../utils/distance';
 
 /**
  * Índice de correspondencias de toda la red, precalculado con
@@ -96,6 +97,31 @@ export function buscarParadas(texto: string, limite = 40): Parada[] {
     lon: d.lon,
     lineasPaso: lineasPasoDeParada(d.code),
   }));
+}
+
+export interface CandidatoParada {
+  parada: Parada;
+  metros: number;
+}
+
+/**
+ * Paradas dentro de un radio de una coordenada, en orden de distancia,
+ * calculado sobre el directorio offline (sin llamadas API). Es el punto de
+ * partida del planificador de rutas: sirve tanto para el origen como para el
+ * destino, dado que ambos pueden ser una dirección geocodificada.
+ */
+export function paradasCercanas(
+  lat: number,
+  lon: number,
+  radioMaxM: number,
+  limite = 6,
+): CandidatoParada[] {
+  return directorioNorm
+    .map((d) => ({ d, metros: haversineMeters(lat, lon, d.lat, d.lon) }))
+    .filter(({ metros }) => metros <= radioMaxM)
+    .sort((a, b) => a.metros - b.metros)
+    .slice(0, limite)
+    .map(({ d, metros }) => ({ parada: paradaDelIndice(d.code)!, metros }));
 }
 
 /** Fecha en que se generó el índice (para saber si conviene regenerarlo). */

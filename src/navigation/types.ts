@@ -1,4 +1,4 @@
-import { Linea, Parada } from '../types';
+import { Linea, Parada, PuntoGeo } from '../types';
 
 export type TabParamList = {
   Inicio: undefined;
@@ -26,6 +26,8 @@ export type LineasStackParamList = {
 
 export type BuscarStackParamList = {
   BuscarHome: undefined;
+  RutaAB: undefined;
+  RutaABResultado: { origen: PuntoGeo; destino: PuntoGeo };
   Parada: { parada: Parada };
   LineaParadas: { linea: Linea; sentido?: 1 | 2 };
 };

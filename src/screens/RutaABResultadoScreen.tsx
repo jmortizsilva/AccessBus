@@ -1,0 +1,219 @@
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import ParadaRow from '../components/ParadaRow';
+import { BuscarStackParamList } from '../navigation/types';
+import { buscarRutaAB, ResultadoRutaAB } from '../services/rutaAB';
+import { useApp } from '../state/AppContext';
+import { theme } from '../theme';
+import { formatDistance } from '../utils/distance';
+import { OpcionRuta } from '../utils/rutaAB';
+
+type Nav = NativeStackNavigationProp<BuscarStackParamList, 'RutaABResultado'>;
+type Ruta = RouteProp<BuscarStackParamList, 'RutaABResultado'>;
+
+function etiquetaOpcion(opcion: OpcionRuta): string {
+  const totalAndando = formatDistance(opcion.metrosOrigen + opcion.metrosDestino);
+  if (opcion.tipo === 'directo') {
+    return (
+      `Línea ${opcion.lin}, hacia ${opcion.destino}. Sube en ${opcion.origen.stopName}. ` +
+      `Baja en ${opcion.bajada.stopName}. ${opcion.paradasEnBus} paradas en el bus. ` +
+      `${totalAndando} andando en total.`
+    );
+  }
+  return (
+    `Línea ${opcion.primero.lin} desde ${opcion.primero.origen.stopName} hasta ${opcion.primero.transbordo.stopName}, ` +
+    `${opcion.primero.paradasEnBus} paradas. Transbordo a la línea ${opcion.segundo.lin} hasta ` +
+    `${opcion.segundo.bajada.stopName}, ${opcion.segundo.paradasEnBus} paradas más. ` +
+    `${totalAndando} andando en total.`
+  );
+}
+
+export default function RutaABResultadoScreen() {
+  const navigation = useNavigation<Nav>();
+  const route = useRoute<Ruta>();
+  const { origen, destino } = route.params;
+  const { lineas, loadingLineas, refreshLineas } = useApp();
+
+  const [resultado, setResultado] = useState<ResultadoRutaAB | undefined>();
+  const [buscando, setBuscando] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    void refreshLineas();
+  }, [refreshLineas]);
+
+  useEffect(() => {
+    if (lineas.length === 0) {
+      return;
+    }
+    let activo = true;
+    setBuscando(true);
+    setError('');
+    buscarRutaAB(origen, destino, lineas)
+      .then((r) => activo && setResultado(r))
+      .catch((err) => activo && setError(String((err as Error).message ?? err)))
+      .finally(() => activo && setBuscando(false));
+    return () => {
+      activo = false;
+    };
+  }, [origen, destino, lineas]);
+
+  const abrirLinea = (lin: string, dir: 1 | 2) => {
+    const linea = lineas.find((l) => l.lin === lin);
+    if (linea) {
+      navigation.navigate('LineaParadas', { linea, sentido: dir });
+    }
+  };
+
+  const cargando = buscando || (loadingLineas && lineas.length === 0);
+
+  return (
+    <ScrollView
+      contentContainerStyle={styles.content}
+      accessibilityLabel="Resultado de la búsqueda de ruta">
+      <Text style={styles.header} accessibilityRole="header">
+        {origen.etiqueta} → {destino.etiqueta}
+      </Text>
+
+      {cargando && (
+        <ActivityIndicator color={theme.primary} accessibilityLabel="Buscando opciones de ruta" />
+      )}
+      {!cargando && error ? <Text style={styles.note}>Error: {error}</Text> : null}
+
+      {!cargando && !error && resultado && resultado.opciones.length > 0 && (
+        <View style={styles.card}>
+          {resultado.opciones.map((opcion, i) => (
+            <OpcionRow
+              key={i}
+              opcion={opcion}
+              isLast={i === resultado.opciones.length - 1}
+              onOpen={abrirLinea}
+            />
+          ))}
+        </View>
+      )}
+
+      {!cargando && !error && resultado && resultado.opciones.length === 0 && (
+        <>
+          <Text style={styles.note}>
+            No se ha encontrado ninguna línea directa ni con un transbordo entre esos dos puntos.
+            Estas son las paradas más cercanas a cada extremo, para que explores manualmente.
+          </Text>
+          {resultado.candidatosOrigen.length > 0 && (
+            <>
+              <Text style={styles.sectionHeader} accessibilityRole="header">
+                Cerca de {origen.etiqueta}
+              </Text>
+              <View style={styles.card}>
+                {resultado.candidatosOrigen.map(({ parada, metros }, i) => (
+                  <ParadaRow
+                    key={parada.stopCode}
+                    parada={parada}
+                    distanceText={formatDistance(metros)}
+                    isLast={i === resultado.candidatosOrigen.length - 1}
+                    onOpen={() => navigation.navigate('Parada', { parada })}
+                  />
+                ))}
+              </View>
+            </>
+          )}
+          {resultado.candidatosDestino.length > 0 && (
+            <>
+              <Text style={styles.sectionHeader} accessibilityRole="header">
+                Cerca de {destino.etiqueta}
+              </Text>
+              <View style={styles.card}>
+                {resultado.candidatosDestino.map(({ parada, metros }, i) => (
+                  <ParadaRow
+                    key={parada.stopCode}
+                    parada={parada}
+                    distanceText={formatDistance(metros)}
+                    isLast={i === resultado.candidatosDestino.length - 1}
+                    onOpen={() => navigation.navigate('Parada', { parada })}
+                  />
+                ))}
+              </View>
+            </>
+          )}
+        </>
+      )}
+    </ScrollView>
+  );
+}
+
+function OpcionRow({
+  opcion,
+  isLast,
+  onOpen,
+}: {
+  opcion: OpcionRuta;
+  isLast: boolean;
+  onOpen: (lin: string, dir: 1 | 2) => void;
+}) {
+  if (opcion.tipo === 'directo') {
+    return (
+      <Pressable
+        style={[styles.row, !isLast && styles.divider]}
+        onPress={() => onOpen(opcion.lin, opcion.dir)}
+        accessibilityRole="button"
+        accessibilityLabel={etiquetaOpcion(opcion)}
+        accessibilityHint="Toca dos veces para ver el recorrido completo de la línea">
+        <View style={styles.badgesFila}>
+          <Text style={styles.badge}>Línea {opcion.lin}</Text>
+          <Text style={styles.meta}>{opcion.paradasEnBus} paradas</Text>
+        </View>
+        <Text style={styles.filaTexto}>Sube en {opcion.origen.stopName}</Text>
+        <Text style={styles.filaTexto}>Baja en {opcion.bajada.stopName}</Text>
+        <Text style={styles.meta}>
+          {formatDistance(opcion.metrosOrigen + opcion.metrosDestino)} andando en total
+        </Text>
+      </Pressable>
+    );
+  }
+  return (
+    <Pressable
+      style={[styles.row, !isLast && styles.divider]}
+      onPress={() => onOpen(opcion.primero.lin, opcion.primero.dir)}
+      accessibilityRole="button"
+      accessibilityLabel={etiquetaOpcion(opcion)}
+      accessibilityHint="Toca dos veces para ver el recorrido de la primera línea">
+      <View style={styles.badgesFila}>
+        <Text style={styles.badge}>Línea {opcion.primero.lin}</Text>
+        <Text style={styles.meta}>→</Text>
+        <Text style={styles.badge}>Línea {opcion.segundo.lin}</Text>
+      </View>
+      <Text style={styles.filaTexto}>Sube en {opcion.primero.origen.stopName}</Text>
+      <Text style={styles.filaTexto}>Transbordo en {opcion.primero.transbordo.stopName}</Text>
+      <Text style={styles.filaTexto}>Baja en {opcion.segundo.bajada.stopName}</Text>
+      <Text style={styles.meta}>
+        {opcion.primero.paradasEnBus + opcion.segundo.paradasEnBus} paradas en total ·{' '}
+        {formatDistance(opcion.metrosOrigen + opcion.metrosDestino)} andando
+      </Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: { paddingTop: 20, paddingHorizontal: 16, paddingBottom: 40, gap: 14 },
+  header: { color: theme.textStrong, fontSize: 20, fontWeight: '700' },
+  sectionHeader: { color: theme.text, fontSize: 18, fontWeight: '600', marginTop: 6 },
+  card: { backgroundColor: theme.card, borderRadius: 16, overflow: 'hidden' },
+  note: { color: theme.textMuted, fontSize: 15 },
+  row: { paddingVertical: 14, paddingHorizontal: 16, gap: 4 },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
+  badgesFila: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  badge: {
+    color: '#ffffff',
+    backgroundColor: theme.primaryDark,
+    fontSize: 13,
+    fontWeight: '700',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    overflow: 'hidden',
+  },
+  filaTexto: { color: theme.text, fontSize: 15 },
+  meta: { color: theme.textMuted, fontSize: 13 },
+});

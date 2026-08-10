@@ -40,6 +40,15 @@ export default function BuscarScreen() {
         Buscar
       </Text>
 
+      <Pressable
+        style={styles.buttonPrimary}
+        onPress={() => navigation.navigate('RutaAB')}
+        accessibilityRole="button"
+        accessibilityLabel="Planificar ruta"
+        accessibilityHint="Busca líneas de EMT entre un origen y un destino">
+        <Text style={styles.buttonText}>🧭 Planificar ruta</Text>
+      </Pressable>
+
       <CampoBusqueda
         onChangeText={setQuery}
         placeholder="Nombre de parada o de calle, o número de parada"
@@ -123,4 +132,13 @@ const styles = StyleSheet.create({
   row: { minHeight: 44, paddingVertical: 12, paddingHorizontal: 16, gap: 2 },
   rowTitle: { color: theme.textStrong, fontSize: 17, fontWeight: '600' },
   rowDesc: { color: theme.textMuted, fontSize: 14 },
+  buttonPrimary: {
+    borderRadius: 12,
+    backgroundColor: theme.primaryDark,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  buttonText: { color: '#ffffff', fontSize: 17, fontWeight: '600' },
 });
