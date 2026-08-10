@@ -9,16 +9,22 @@ import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { formatDistance } from '../utils/distance';
 import { OpcionRuta } from '../utils/rutaAB';
+import { Parada } from '../types';
 
 type Nav = NativeStackNavigationProp<BuscarStackParamList, 'RutaABResultado'>;
 type Ruta = RouteProp<BuscarStackParamList, 'RutaABResultado'>;
+
+/** Nombre + número de parada, igual que en la cabecera de la pantalla de parada. */
+function conParada(parada: Parada): string {
+  return `${parada.stopName} (parada ${parada.stopCode})`;
+}
 
 function etiquetaOpcion(opcion: OpcionRuta): string {
   if (opcion.tipo === 'directo') {
     const totalAndando = formatDistance(opcion.metrosOrigen + opcion.metrosDestino);
     return (
-      `Línea ${opcion.lin}, hacia ${opcion.destino}. Sube en ${opcion.origen.stopName}. ` +
-      `Baja en ${opcion.bajada.stopName}. ${opcion.paradasEnBus} paradas en el bus. ` +
+      `Línea ${opcion.lin}, hacia ${opcion.destino}. Sube en ${conParada(opcion.origen)}. ` +
+      `Baja en ${conParada(opcion.bajada)}. ${opcion.paradasEnBus} paradas en el bus. ` +
       `${totalAndando} andando en total.`
     );
   }
@@ -26,10 +32,10 @@ function etiquetaOpcion(opcion: OpcionRuta): string {
     opcion.metrosOrigen + opcion.metrosTransbordo + opcion.metrosDestino,
   );
   return (
-    `Línea ${opcion.primero.lin} desde ${opcion.primero.origen.stopName} hasta ${opcion.primero.bajada.stopName}, ` +
+    `Línea ${opcion.primero.lin} desde ${conParada(opcion.primero.origen)} hasta ${conParada(opcion.primero.bajada)}, ` +
     `${opcion.primero.paradasEnBus} paradas. Cambia andando ${formatDistance(opcion.metrosTransbordo)} ` +
-    `hasta ${opcion.segundo.subida.stopName} y coge la línea ${opcion.segundo.lin} hasta ` +
-    `${opcion.segundo.bajada.stopName}, ${opcion.segundo.paradasEnBus} paradas más. ` +
+    `hasta ${conParada(opcion.segundo.subida)} y coge la línea ${opcion.segundo.lin} hasta ` +
+    `${conParada(opcion.segundo.bajada)}, ${opcion.segundo.paradasEnBus} paradas más. ` +
     `${totalAndando} andando en total.`
   );
 }
@@ -168,8 +174,8 @@ function OpcionRow({
           <Text style={styles.badge}>Línea {opcion.lin}</Text>
           <Text style={styles.meta}>{opcion.paradasEnBus} paradas</Text>
         </View>
-        <Text style={styles.filaTexto}>Sube en {opcion.origen.stopName}</Text>
-        <Text style={styles.filaTexto}>Baja en {opcion.bajada.stopName}</Text>
+        <Text style={styles.filaTexto}>Sube en {conParada(opcion.origen)}</Text>
+        <Text style={styles.filaTexto}>Baja en {conParada(opcion.bajada)}</Text>
         <Text style={styles.meta}>
           {formatDistance(opcion.metrosOrigen + opcion.metrosDestino)} andando en total
         </Text>
@@ -188,12 +194,12 @@ function OpcionRow({
         <Text style={styles.meta}>→</Text>
         <Text style={styles.badge}>Línea {opcion.segundo.lin}</Text>
       </View>
-      <Text style={styles.filaTexto}>Sube en {opcion.primero.origen.stopName}</Text>
-      <Text style={styles.filaTexto}>Baja en {opcion.primero.bajada.stopName}</Text>
+      <Text style={styles.filaTexto}>Sube en {conParada(opcion.primero.origen)}</Text>
+      <Text style={styles.filaTexto}>Baja en {conParada(opcion.primero.bajada)}</Text>
       <Text style={styles.meta}>
-        🚶 {formatDistance(opcion.metrosTransbordo)} hasta {opcion.segundo.subida.stopName}
+        🚶 {formatDistance(opcion.metrosTransbordo)} hasta {conParada(opcion.segundo.subida)}
       </Text>
-      <Text style={styles.filaTexto}>Baja en {opcion.segundo.bajada.stopName}</Text>
+      <Text style={styles.filaTexto}>Baja en {conParada(opcion.segundo.bajada)}</Text>
       <Text style={styles.meta}>
         {opcion.primero.paradasEnBus + opcion.segundo.paradasEnBus} paradas en total ·{' '}
         {formatDistance(opcion.metrosOrigen + opcion.metrosTransbordo + opcion.metrosDestino)}{' '}

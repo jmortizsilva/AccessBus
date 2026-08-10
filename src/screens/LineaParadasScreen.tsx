@@ -376,7 +376,7 @@ function LineaParadaRow({
       style={[styles.row, !isLast && styles.divider]}
       onPress={onOpen}
       accessibilityRole="button"
-      accessibilityLabel={`${parada.stopName}.${hablarEnlaces(enlaces)}${fav ? ' En favoritos.' : ''}`}
+      accessibilityLabel={`${parada.stopName}. Parada ${parada.stopCode}.${hablarEnlaces(enlaces)}${fav ? ' En favoritos.' : ''}`}
       accessibilityHint={
         modoSeleccion
           ? 'Toca dos veces para avisarte cuando bajes aquí'
