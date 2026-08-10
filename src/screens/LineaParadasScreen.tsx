@@ -1,14 +1,24 @@
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useParadaActions } from '../hooks/useParadaActions';
 import { LineasStackParamList } from '../navigation/types';
 import { getHorariosLinea, getStopsLinea, HorarioLinea } from '../services/emt';
+import { iniciarViaje } from '../services/seguimientoViaje';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { enlacesDeParada } from '../data/red';
 import { Parada } from '../types';
+import { haversineMeters } from '../utils/distance';
 import { parseLineasPaso } from '../utils/lineas';
 
 type Nav = NativeStackNavigationProp<LineasStackParamList, 'LineaParadas'>;
@@ -17,7 +27,17 @@ export default function LineaParadasScreen() {
   const route = useRoute<RouteProp<LineasStackParamList, 'LineaParadas'>>();
   const navigation = useNavigation<Nav>();
   const { linea, sentido: sentidoPedido } = route.params;
-  const { lineas, diaServicio, isFavoriteLinea, toggleFavoriteLinea } = useApp();
+  const {
+    lineas,
+    diaServicio,
+    isFavoriteLinea,
+    toggleFavoriteLinea,
+    currentLocation,
+    viajeActivo,
+    refrescarViaje,
+    cancelarViaje,
+  } = useApp();
+  const [seleccionandoBajada, setSeleccionandoBajada] = useState(false);
   const [horarios, setHorarios] = useState<HorarioLinea[]>([]);
   // Los horarios ocupan mucho; se muestran plegados tras un botón.
   const [mostrarHorarios, setMostrarHorarios] = useState(false);
@@ -89,6 +109,82 @@ export default function LineaParadasScreen() {
 
   const destino = paradas.length > 0 ? paradas[paradas.length - 1].stopName : undefined;
 
+  const viajeDeEstaLinea =
+    viajeActivo?.estado === 'activo' &&
+    viajeActivo.lin === linea.lin &&
+    viajeActivo.dir === sentido;
+
+  // La parada de subida no se pregunta: se toma la más cercana a la ubicación
+  // actual dentro del propio recorrido, que es donde el usuario está de verdad.
+  const elegirBajada = useCallback(
+    async (bajada: Parada) => {
+      setSeleccionandoBajada(false);
+      if (!currentLocation) {
+        Alert.alert(
+          'Ubicación necesaria',
+          'Necesito tu ubicación actual para saber desde qué parada empiezas. Actualízala en Inicio e inténtalo de nuevo.',
+        );
+        return;
+      }
+      let origen = paradas[0];
+      let mejorDistancia = Infinity;
+      for (const p of paradas) {
+        if (p.lat === undefined || p.lon === undefined) {
+          continue;
+        }
+        const d = haversineMeters(currentLocation.lat, currentLocation.lon, p.lat, p.lon);
+        if (d < mejorDistancia) {
+          mejorDistancia = d;
+          origen = p;
+        }
+      }
+      const resultado = await iniciarViaje({
+        linea,
+        dir: sentido,
+        secuencia: paradas,
+        origen,
+        bajada,
+      });
+      if (resultado.ok) {
+        await refrescarViaje();
+        Alert.alert('Aviso activado', `Te avisaré cuando te acerques a ${bajada.stopName}.`);
+      } else {
+        Alert.alert('No se ha podido activar el aviso', resultado.motivo ?? 'Inténtalo de nuevo.');
+      }
+    },
+    [currentLocation, paradas, linea, sentido, refrescarViaje],
+  );
+
+  const handleAvisarPress = () => {
+    if (seleccionandoBajada) {
+      setSeleccionandoBajada(false);
+      return;
+    }
+    if (viajeDeEstaLinea) {
+      Alert.alert(
+        'Aviso de parada activo',
+        `Te avisaré cuando te acerques a ${viajeActivo!.destinoNombre}.`,
+        [
+          { text: 'Seguir avisando', style: 'cancel' },
+          { text: 'Cancelar aviso', style: 'destructive', onPress: () => void cancelarViaje() },
+        ],
+      );
+      return;
+    }
+    if (viajeActivo?.estado === 'activo') {
+      Alert.alert(
+        'Ya hay un viaje en curso',
+        `Estás siguiendo la línea ${viajeActivo.lin} hasta ${viajeActivo.destinoNombre}. ¿Sustituirlo por esta línea?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Sustituir', onPress: () => setSeleccionandoBajada(true) },
+        ],
+      );
+      return;
+    }
+    setSeleccionandoBajada(true);
+  };
+
   return (
     <ScrollView
       style={styles.screen}
@@ -111,6 +207,37 @@ export default function LineaParadasScreen() {
         accessibilityHint="Las líneas seguidas te avisan de sus incidencias">
         <Text style={styles.seguirText}>
           {isFavoriteLinea(linea.lin) ? '🔔 Siguiendo esta línea' : '🔕 Seguir esta línea'}
+        </Text>
+      </Pressable>
+
+      <Pressable
+        style={[
+          styles.avisarButton,
+          (seleccionandoBajada || viajeDeEstaLinea) && styles.avisarActivo,
+        ]}
+        onPress={handleAvisarPress}
+        accessibilityRole="button"
+        accessibilityState={{ selected: seleccionandoBajada || viajeDeEstaLinea }}
+        accessibilityLabel={
+          seleccionandoBajada
+            ? 'Cancelar selección de parada de bajada'
+            : viajeDeEstaLinea
+              ? 'Aviso de parada de bajada activo'
+              : 'Avisarme al bajar'
+        }
+        accessibilityHint={
+          seleccionandoBajada
+            ? 'Toca una parada de la lista para elegir dónde bajarte'
+            : viajeDeEstaLinea
+              ? 'Toca dos veces para cancelar el aviso'
+              : 'Elige en qué parada quieres que te avisemos, incluso con la app en segundo plano'
+        }>
+        <Text style={styles.avisarText}>
+          {seleccionandoBajada
+            ? '❌ Elige una parada de la lista'
+            : viajeDeEstaLinea
+              ? '🔔 Avisando al bajar'
+              : '🔔 Avisarme al bajar'}
         </Text>
       </Pressable>
 
@@ -192,7 +319,12 @@ export default function LineaParadasScreen() {
               order={i + 1}
               isLast={i === paradas.length - 1}
               enlaces={enlacesDe(parada)}
-              onOpen={() => navigation.navigate('Parada', { parada })}
+              modoSeleccion={seleccionandoBajada}
+              onOpen={() =>
+                seleccionandoBajada
+                  ? void elegirBajada(parada)
+                  : navigation.navigate('Parada', { parada })
+              }
             />
           ))}
         </View>
@@ -229,12 +361,14 @@ function LineaParadaRow({
   isLast,
   enlaces,
   onOpen,
+  modoSeleccion,
 }: {
   parada: Parada;
   order: number;
   isLast: boolean;
   enlaces: Enlace[];
   onOpen: () => void;
+  modoSeleccion?: boolean;
 }) {
   const { accessibilityActions, onAccessibilityAction, fav } = useParadaActions(parada, onOpen);
   return (
@@ -243,7 +377,11 @@ function LineaParadaRow({
       onPress={onOpen}
       accessibilityRole="button"
       accessibilityLabel={`${parada.stopName}.${hablarEnlaces(enlaces)}${fav ? ' En favoritos.' : ''}`}
-      accessibilityHint="Toca dos veces para abrir. En el rotor de acciones tienes el tiempo de cada línea."
+      accessibilityHint={
+        modoSeleccion
+          ? 'Toca dos veces para avisarte cuando bajes aquí'
+          : 'Toca dos veces para abrir. En el rotor de acciones tienes el tiempo de cada línea.'
+      }
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={onAccessibilityAction}>
       <View style={styles.orderBadge} importantForAccessibility="no">
@@ -290,6 +428,18 @@ const styles = StyleSheet.create({
   },
   seguirActivo: { backgroundColor: theme.primaryDark, borderColor: theme.primary },
   seguirText: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
+  avisarButton: {
+    borderRadius: 12,
+    backgroundColor: theme.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  avisarActivo: { backgroundColor: theme.primaryDark, borderColor: theme.primary },
+  avisarText: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
   horarioBox: {
     backgroundColor: theme.card,
     borderRadius: 12,

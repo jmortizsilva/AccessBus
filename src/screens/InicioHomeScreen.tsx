@@ -4,9 +4,23 @@ import { useCallback } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import ParadaRow from '../components/ParadaRow';
 import { InicioStackParamList } from '../navigation/types';
+import { ViajeActivo } from '../services/seguimientoViaje';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { formatDistance } from '../utils/distance';
+
+function textoViaje(viaje: ViajeActivo): string {
+  switch (viaje.estado) {
+    case 'activo': {
+      const restantes = viaje.indiceDestino - viaje.indiceActual;
+      return `🔔 Línea ${viaje.lin} · bajas en ${viaje.destinoNombre} · quedan ${Math.max(0, restantes)} paradas`;
+    }
+    case 'llegado':
+      return `✅ Has llegado a ${viaje.destinoNombre}`;
+    case 'timeout':
+      return `⏸️ Seguimiento detenido: llevabas mucho tiempo sin avanzar hacia ${viaje.destinoNombre}`;
+  }
+}
 
 type Nav = NativeStackNavigationProp<InicioStackParamList, 'InicioHome'>;
 
@@ -21,13 +35,19 @@ export default function InicioHomeScreen() {
     loadingLocation,
     loadingNearby,
     refreshLocation,
+    viajeActivo,
+    refrescarViaje,
+    cancelarViaje,
   } = useApp();
 
-  // La ubicación se actualiza automáticamente al entrar en Inicio (silenciosa).
+  // La ubicación y el viaje activo se actualizan al entrar en Inicio: el viaje
+  // lo escribe la tarea en segundo plano directamente en AsyncStorage, así que
+  // el estado de React necesita releerlo para no quedarse desactualizado.
   useFocusEffect(
     useCallback(() => {
       void refreshLocation({ silent: true });
-    }, [refreshLocation]),
+      void refrescarViaje();
+    }, [refreshLocation, refrescarViaje]),
   );
 
   return (
@@ -46,6 +66,26 @@ export default function InicioHomeScreen() {
           }>
           <Text style={styles.diaText}>🗓️ Servicio de hoy: {diaServicio.etiqueta}</Text>
           {diaServicio.huelga ? <Text style={styles.diaHuelga}>⚠️ Huelga convocada</Text> : null}
+        </View>
+      ) : null}
+
+      {viajeActivo ? (
+        <View
+          style={[styles.viajeBanner, viajeActivo.estado !== 'activo' && styles.viajeBannerFin]}
+          accessible
+          accessibilityLabel={textoViaje(viajeActivo)}>
+          <Text style={styles.viajeTexto}>{textoViaje(viajeActivo)}</Text>
+          <Pressable
+            style={styles.viajeBoton}
+            onPress={() => void cancelarViaje()}
+            accessibilityRole="button"
+            accessibilityLabel={
+              viajeActivo.estado === 'activo' ? 'Cancelar aviso de parada' : 'Descartar aviso'
+            }>
+            <Text style={styles.viajeBotonTexto}>
+              {viajeActivo.estado === 'activo' ? 'Cancelar' : 'Vale'}
+            </Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -135,6 +175,21 @@ const styles = StyleSheet.create({
   diaBannerHuelga: { borderLeftColor: '#e0a33e' },
   diaText: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
   diaHuelga: { color: '#e0a33e', fontSize: 14, fontWeight: '700' },
+  viajeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: theme.card,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  viajeBannerFin: { borderLeftColor: '#e0a33e' },
+  viajeTexto: { flex: 1, color: theme.textStrong, fontSize: 15, fontWeight: '600' },
+  viajeBoton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
+  viajeBotonTexto: { color: theme.primary, fontSize: 15, fontWeight: '700' },
   sectionHeader: { color: theme.text, fontSize: 20, fontWeight: '600', marginTop: 6 },
   card: { backgroundColor: theme.card, borderRadius: 16, overflow: 'hidden' },
   note: { color: theme.textMuted, fontSize: 15 },

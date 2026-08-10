@@ -46,7 +46,9 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "AccessBus usa tu ubicación para mostrarte las paradas de autobús más cercanas."
+          "locationWhenInUsePermission": "AccessBus usa tu ubicación para mostrarte las paradas de autobús más cercanas.",
+          "locationAlwaysAndWhenInUsePermission": "AccessBus necesita tu ubicación en segundo plano para avisarte, incluso con la pantalla bloqueada, de en qué parada debes bajarte del autobús.",
+          "isIosBackgroundLocationEnabled": true
         }
       ]
     ],

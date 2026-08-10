@@ -1,5 +1,9 @@
 import { registerRootComponent } from 'expo';
 
+// Registra la tarea de seguimiento de parada ANTES de montar App: si iOS
+// relanza el JS en segundo plano para entregar una ubicación, no monta ningún
+// componente, así que defineTask tiene que ejecutarse igualmente aquí arriba.
+import './src/services/tareaSeguimiento';
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

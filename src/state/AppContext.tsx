@@ -20,6 +20,7 @@ import {
   NearbyResult,
 } from '../services/emt';
 import { asegurarPermisoNotificaciones, avisar } from '../services/notificaciones';
+import { cancelarViajeActivo, leerViajeActivo, ViajeActivo } from '../services/seguimientoViaje';
 import { Linea, Parada } from '../types';
 
 const STORAGE_FAVORITES = 'busmadrid.favorites.v1';
@@ -84,6 +85,10 @@ interface AppContextValue {
   /** Último aviso transitorio (o null). Lo pinta y anuncia el componente Aviso. */
   aviso: AvisoUI | null;
   descartarAviso: () => void;
+  /** Viaje en curso del aviso de parada de bajada (o null si no hay ninguno). */
+  viajeActivo: ViajeActivo | null;
+  refrescarViaje: () => Promise<void>;
+  cancelarViaje: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);
@@ -102,6 +107,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loadingNearby, setLoadingNearby] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [aviso, setAviso] = useState<AvisoUI | null>(null);
+  const [viajeActivo, setViajeActivo] = useState<ViajeActivo | null>(null);
 
   const lineasRef = useRef<Linea[]>([]);
   lineasRef.current = lineas;
@@ -396,6 +402,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => sub.remove();
   }, [comprobarAvisosLineas]);
 
+  // El viaje del aviso de parada de bajada lo actualiza la tarea en segundo
+  // plano directamente en AsyncStorage (no tiene acceso al árbol de React), así
+  // que aquí solo se relee: al arrancar y cada vez que la app vuelve a primer plano.
+  const refrescarViaje = useCallback(async () => {
+    setViajeActivo(await leerViajeActivo());
+  }, []);
+
+  const cancelarViaje = useCallback(async () => {
+    await cancelarViajeActivo();
+    setViajeActivo(null);
+  }, []);
+
+  useEffect(() => {
+    void refrescarViaje();
+    const sub = AppState.addEventListener('change', (estado) => {
+      if (estado === 'active') {
+        void refrescarViaje();
+      }
+    });
+    return () => sub.remove();
+  }, [refrescarViaje]);
+
   const value = useMemo<AppContextValue>(
     () => ({
       lineas,
@@ -422,6 +450,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setUmbralMin,
       aviso,
       descartarAviso,
+      viajeActivo,
+      refrescarViaje,
+      cancelarViaje,
     }),
     [
       lineas,
@@ -448,6 +479,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setUmbralMin,
       aviso,
       descartarAviso,
+      viajeActivo,
+      refrescarViaje,
+      cancelarViaje,
     ],
   );
 
