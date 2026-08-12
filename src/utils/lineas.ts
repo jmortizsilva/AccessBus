@@ -22,6 +22,11 @@ export function prettyLinea(core: string): string {
   return `Línea ${core}`;
 }
 
+/** Las líneas nocturnas ("Búho") de la EMT se etiquetan N1, N2... N27. */
+export function esLineaNocturna(lin: string): boolean {
+  return /^N\d/.test(lin);
+}
+
 /** Lista de líneas que pasan por una parada, deduplicadas y limitadas. */
 export function parseLineasPaso(lineasPaso: string | undefined, max = 12): string[] {
   if (!lineasPaso) {

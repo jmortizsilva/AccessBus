@@ -1,13 +1,18 @@
 import { Enlace, CandidatoParada } from '../data/red';
 import { Parada } from '../types';
 import {
+  agruparPorParadas,
   buscarTransbordo,
   combinacionesDirectas,
   construirTramoConTransbordo,
+  esHorarioNocturno,
+  lineasActivasAhora,
   lineasCandidatas,
   ordenarOpciones,
   validarTramoDirecto,
   OpcionRuta,
+  TramoConTransbordo,
+  TramoDirecto,
 } from './rutaAB';
 
 function parada(stopCode: string): Parada {
@@ -284,5 +289,125 @@ describe('ordenarOpciones', () => {
     const copia = [...original];
     ordenarOpciones(original);
     expect(original).toEqual(copia);
+  });
+});
+
+describe('esHorarioNocturno', () => {
+  it('es de noche entre las 23:55 y las 06:00', () => {
+    expect(esHorarioNocturno(new Date(2026, 0, 1, 23, 55))).toBe(true);
+    expect(esHorarioNocturno(new Date(2026, 0, 1, 3, 30))).toBe(true);
+    expect(esHorarioNocturno(new Date(2026, 0, 1, 5, 59))).toBe(true);
+  });
+
+  it('no es de noche en horario diurno', () => {
+    expect(esHorarioNocturno(new Date(2026, 0, 1, 6, 0))).toBe(false);
+    expect(esHorarioNocturno(new Date(2026, 0, 1, 12, 0))).toBe(false);
+    expect(esHorarioNocturno(new Date(2026, 0, 1, 23, 54))).toBe(false);
+  });
+});
+
+describe('lineasActivasAhora', () => {
+  const items = [{ lin: '27' }, { lin: 'N26' }, { lin: '5' }, { lin: 'N1' }];
+
+  it('de día, se queda solo con las líneas diurnas', () => {
+    const mediodia = new Date(2026, 0, 1, 12, 0);
+    expect(lineasActivasAhora(items, mediodia).map((i) => i.lin)).toEqual(['27', '5']);
+  });
+
+  it('de madrugada, se queda solo con las nocturnas', () => {
+    const madrugada = new Date(2026, 0, 1, 3, 0);
+    expect(lineasActivasAhora(items, madrugada).map((i) => i.lin)).toEqual(['N26', 'N1']);
+  });
+});
+
+describe('agruparPorParadas', () => {
+  it('junta dos opciones directas con la misma subida y bajada en una sola, con alternativas', () => {
+    const base: TramoDirecto = {
+      tipo: 'directo',
+      lin: '26',
+      dir: 1,
+      destino: 'Centro',
+      origen: parada('A'),
+      bajada: parada('B'),
+      paradasEnBus: 5,
+      metrosOrigen: 100,
+      metrosDestino: 50,
+    };
+    const otraLinea: TramoDirecto = { ...base, lin: '32' };
+    const agrupado = agruparPorParadas([base, otraLinea]);
+    expect(agrupado).toHaveLength(1);
+    expect((agrupado[0] as TramoDirecto).lin).toBe('26');
+    expect((agrupado[0] as TramoDirecto).lineasAlternativas).toEqual(['32']);
+  });
+
+  it('no junta opciones directas si la parada de bajada es distinta', () => {
+    const a: TramoDirecto = {
+      tipo: 'directo',
+      lin: '26',
+      dir: 1,
+      destino: 'Centro',
+      origen: parada('A'),
+      bajada: parada('B'),
+      paradasEnBus: 5,
+      metrosOrigen: 100,
+      metrosDestino: 50,
+    };
+    const b: TramoDirecto = { ...a, lin: '32', bajada: parada('C') };
+    expect(agruparPorParadas([a, b])).toHaveLength(2);
+  });
+
+  it('junta transbordos con las 4 paradas iguales, aunque cambie la segunda línea', () => {
+    const base: TramoConTransbordo = {
+      tipo: 'transbordo',
+      primero: { lin: '5', dir: 1, origen: parada('A'), bajada: parada('T1'), paradasEnBus: 2 },
+      segundo: { lin: '26', dir: 1, subida: parada('T2'), bajada: parada('B'), paradasEnBus: 3 },
+      metrosOrigen: 50,
+      metrosTransbordo: 40,
+      metrosDestino: 30,
+    };
+    const conOtraSegunda: TramoConTransbordo = {
+      ...base,
+      segundo: { ...base.segundo, lin: '32' },
+    };
+    const agrupado = agruparPorParadas([base, conOtraSegunda]);
+    expect(agrupado).toHaveLength(1);
+    const tramo = agrupado[0] as TramoConTransbordo;
+    expect(tramo.segundo.lin).toBe('26');
+    expect(tramo.segundo.lineasAlternativas).toEqual(['32']);
+    expect(tramo.primero.lineasAlternativas).toBeUndefined();
+  });
+
+  it('ordena las alternativas con el mismo criterio numérico que el resto de la app', () => {
+    const base: TramoDirecto = {
+      tipo: 'directo',
+      lin: '5',
+      dir: 1,
+      destino: 'Centro',
+      origen: parada('A'),
+      bajada: parada('B'),
+      paradasEnBus: 5,
+      metrosOrigen: 100,
+      metrosDestino: 50,
+    };
+    const con27 = { ...base, lin: '27' };
+    const con10 = { ...base, lin: '10' };
+    const agrupado = agruparPorParadas([base, con27, con10]);
+    expect((agrupado[0] as TramoDirecto).lineasAlternativas).toEqual(['10', '27']);
+  });
+
+  it('no junta opciones que no comparten ninguna parada', () => {
+    const directo: OpcionRuta = {
+      tipo: 'directo',
+      lin: '5',
+      dir: 1,
+      destino: 'Centro',
+      origen: parada('A'),
+      bajada: parada('B'),
+      paradasEnBus: 5,
+      metrosOrigen: 100,
+      metrosDestino: 50,
+    };
+    const otro: OpcionRuta = { ...directo, lin: '27', origen: parada('X'), bajada: parada('Y') };
+    expect(agruparPorParadas([directo, otro])).toHaveLength(2);
   });
 });

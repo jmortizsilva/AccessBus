@@ -1,8 +1,10 @@
 import { CandidatoParada, paradasCercanas } from '../data/red';
 import { Linea, Parada, PuntoGeo } from '../types';
 import {
+  agruparPorParadas,
   combinacionesDirectas,
   construirTramoConTransbordo,
+  lineasActivasAhora,
   lineasCandidatas,
   OpcionRuta,
   ordenarOpciones,
@@ -51,6 +53,10 @@ export async function buscarRutaAB(
   const idByLabel: Record<string, string> = Object.fromEntries(lineas.map((l) => [l.lin, l.id]));
   const candidatosOrigen = candidatosEnRadiosCrecientes(origen);
   const candidatosDestino = candidatosEnRadiosCrecientes(destino);
+  // Las líneas nocturnas ("Búho") no circulan de día ni las diurnas de
+  // madrugada: mezclarlas sin distinguir proponía rutas con líneas que en ese
+  // momento no pasan.
+  const ahora = new Date();
 
   const cacheSecuencias = new Map<string, Promise<Parada[]>>();
   const secuenciaDe = (lin: string, dir: 1 | 2): Promise<Parada[]> => {
@@ -66,7 +72,11 @@ export async function buscarRutaAB(
 
   const opciones: OpcionRuta[] = [];
 
-  for (const candidato of combinacionesDirectas(candidatosOrigen, candidatosDestino)) {
+  const directasActivas = lineasActivasAhora(
+    combinacionesDirectas(candidatosOrigen, candidatosDestino),
+    ahora,
+  );
+  for (const candidato of directasActivas) {
     const secuencia = await secuenciaDe(candidato.lin, candidato.dir);
     const tramo = validarTramoDirecto(candidato, secuencia);
     if (tramo) {
@@ -77,8 +87,14 @@ export async function buscarRutaAB(
   // El transbordo es más caro (líneas x líneas peticiones): solo si con las
   // directas no hay suficientes opciones para elegir.
   if (opciones.length < LIMITE_OPCIONES) {
-    const lineasOrigen = lineasCandidatas(candidatosOrigen, TOPE_LINEAS_TRANSBORDO);
-    const lineasDestino = lineasCandidatas(candidatosDestino, TOPE_LINEAS_TRANSBORDO);
+    const lineasOrigen = lineasActivasAhora(
+      lineasCandidatas(candidatosOrigen, TOPE_LINEAS_TRANSBORDO),
+      ahora,
+    );
+    const lineasDestino = lineasActivasAhora(
+      lineasCandidatas(candidatosDestino, TOPE_LINEAS_TRANSBORDO),
+      ahora,
+    );
     for (const lo of lineasOrigen) {
       for (const ld of lineasDestino) {
         if (lo.lin === ld.lin) {
@@ -104,7 +120,7 @@ export async function buscarRutaAB(
   }
 
   return {
-    opciones: ordenarOpciones(opciones).slice(0, LIMITE_OPCIONES),
+    opciones: ordenarOpciones(agruparPorParadas(opciones)).slice(0, LIMITE_OPCIONES),
     candidatosOrigen,
     candidatosDestino,
   };

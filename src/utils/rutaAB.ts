@@ -1,6 +1,8 @@
 import { CandidatoParada, Enlace, lineasDeParada } from '../data/red';
 import { Parada } from '../types';
 import { haversineMeters } from './distance';
+import { esLineaNocturna } from './lineas';
+import { compararLineas } from './ordenLineas';
 
 /** Consulta de qué líneas pasan por una parada; inyectable para poder testear
  *  con datos fabricados a mano sin depender de la red real. */
@@ -16,6 +18,8 @@ type ObtenerEnlaces = (stopCode: string) => Enlace[];
 export interface TramoDirecto {
   tipo: 'directo';
   lin: string;
+  /** Otras líneas que hacen exactamente el mismo tramo (misma subida y bajada). */
+  lineasAlternativas?: string[];
   dir: 1 | 2;
   /** Cabecera final del recorrido, tal cual la da la API. */
   destino: string;
@@ -28,8 +32,22 @@ export interface TramoDirecto {
 
 export interface TramoConTransbordo {
   tipo: 'transbordo';
-  primero: { lin: string; dir: 1 | 2; origen: Parada; bajada: Parada; paradasEnBus: number };
-  segundo: { lin: string; dir: 1 | 2; subida: Parada; bajada: Parada; paradasEnBus: number };
+  primero: {
+    lin: string;
+    lineasAlternativas?: string[];
+    dir: 1 | 2;
+    origen: Parada;
+    bajada: Parada;
+    paradasEnBus: number;
+  };
+  segundo: {
+    lin: string;
+    lineasAlternativas?: string[];
+    dir: 1 | 2;
+    subida: Parada;
+    bajada: Parada;
+    paradasEnBus: number;
+  };
   metrosOrigen: number;
   /** Distancia a pie entre donde se baja de la primera línea y donde se sube a la segunda. */
   metrosTransbordo: number;
@@ -245,6 +263,98 @@ export function construirTramoConTransbordo(
     metrosTransbordo: transbordo.metros,
     metrosDestino: candidato.segundo.destino.metros,
   };
+}
+
+/**
+ * Horario aproximado del servicio nocturno ("Búho") de la EMT: 23:55 a 06:00.
+ * No hay ningún endpoint que diga qué líneas operan ahora mismo, así que se
+ * usa esta franja fija en vez de mezclar líneas nocturnas con las diurnas sin
+ * avisar de que unas y otras no circulan al mismo tiempo.
+ */
+export function esHorarioNocturno(fecha: Date): boolean {
+  const minutos = fecha.getHours() * 60 + fecha.getMinutes();
+  return minutos >= 23 * 60 + 55 || minutos < 6 * 60;
+}
+
+/** Se queda solo con las líneas activas ahora: nocturnas de madrugada, diurnas el resto del día. */
+export function lineasActivasAhora<T extends { lin: string }>(items: T[], ahora: Date): T[] {
+  const nocturno = esHorarioNocturno(ahora);
+  return items.filter((item) => esLineaNocturna(item.lin) === nocturno);
+}
+
+function agregarAlternativa(
+  actuales: string[] | undefined,
+  principal: string,
+  nueva: string,
+): string[] | undefined {
+  if (nueva === principal) {
+    return actuales;
+  }
+  const set = new Set(actuales ?? []);
+  set.add(nueva);
+  return [...set].sort(compararLineas);
+}
+
+function claveParadasDirecto(o: TramoDirecto): string {
+  return `${o.origen.stopCode}:${o.bajada.stopCode}`;
+}
+
+function claveParadasTransbordo(o: TramoConTransbordo): string {
+  return `${o.primero.origen.stopCode}:${o.primero.bajada.stopCode}:${o.segundo.subida.stopCode}:${o.segundo.bajada.stopCode}`;
+}
+
+/**
+ * Junta opciones que usan exactamente las mismas paradas (de subida, bajada y
+ * transbordo): es la misma caminata y el mismo trayecto, solo cambia qué
+ * autobús concreto coger en cada tramo (p.ej. las líneas 26 y 32 paran en los
+ * mismos dos puntos). Las líneas adicionales quedan en `lineasAlternativas`.
+ */
+export function agruparPorParadas(opciones: OpcionRuta[]): OpcionRuta[] {
+  const directos = new Map<string, TramoDirecto>();
+  const transbordos = new Map<string, TramoConTransbordo>();
+  const orden: OpcionRuta[] = [];
+
+  for (const o of opciones) {
+    if (o.tipo === 'directo') {
+      const clave = claveParadasDirecto(o);
+      const existente = directos.get(clave);
+      if (existente) {
+        existente.lineasAlternativas = agregarAlternativa(
+          existente.lineasAlternativas,
+          existente.lin,
+          o.lin,
+        );
+      } else {
+        const copia: TramoDirecto = { ...o };
+        directos.set(clave, copia);
+        orden.push(copia);
+      }
+    } else {
+      const clave = claveParadasTransbordo(o);
+      const existente = transbordos.get(clave);
+      if (existente) {
+        existente.primero.lineasAlternativas = agregarAlternativa(
+          existente.primero.lineasAlternativas,
+          existente.primero.lin,
+          o.primero.lin,
+        );
+        existente.segundo.lineasAlternativas = agregarAlternativa(
+          existente.segundo.lineasAlternativas,
+          existente.segundo.lin,
+          o.segundo.lin,
+        );
+      } else {
+        const copia: TramoConTransbordo = {
+          ...o,
+          primero: { ...o.primero },
+          segundo: { ...o.segundo },
+        };
+        transbordos.set(clave, copia);
+        orden.push(copia);
+      }
+    }
+  }
+  return orden;
 }
 
 function metrosAndando(opcion: OpcionRuta): number {

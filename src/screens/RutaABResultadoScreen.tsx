@@ -19,25 +19,43 @@ function conParada(parada: Parada): string {
   return `${parada.stopName} (parada ${parada.stopCode})`;
 }
 
+/**
+ * "línea 26" o, si hay alternativas que paran en los mismos dos puntos,
+ * "líneas 26 o 32" / "líneas 26, 32 o N26".
+ */
+function textoLineas(lin: string, alternativas?: string[]): string {
+  if (!alternativas || alternativas.length === 0) {
+    return `línea ${lin}`;
+  }
+  const todas = [lin, ...alternativas];
+  const ultima = todas[todas.length - 1];
+  return `líneas ${todas.slice(0, -1).join(', ')} o ${ultima}`;
+}
+
 function etiquetaOpcion(opcion: OpcionRuta): string {
   if (opcion.tipo === 'directo') {
     const totalAndando = formatDistance(opcion.metrosOrigen + opcion.metrosDestino);
     return (
-      `Línea ${opcion.lin}, hacia ${opcion.destino}. Sube en ${conParada(opcion.origen)}. ` +
-      `Baja en ${conParada(opcion.bajada)}. ${opcion.paradasEnBus} paradas en el bus. ` +
-      `${totalAndando} andando en total.`
+      `${capitaliza(textoLineas(opcion.lin, opcion.lineasAlternativas))}, hacia ${opcion.destino}. ` +
+      `Sube en ${conParada(opcion.origen)}. Baja en ${conParada(opcion.bajada)}. ` +
+      `${opcion.paradasEnBus} paradas en el bus. ${totalAndando} andando en total.`
     );
   }
   const totalAndando = formatDistance(
     opcion.metrosOrigen + opcion.metrosTransbordo + opcion.metrosDestino,
   );
   return (
-    `Línea ${opcion.primero.lin} desde ${conParada(opcion.primero.origen)} hasta ${conParada(opcion.primero.bajada)}, ` +
-    `${opcion.primero.paradasEnBus} paradas. Cambia andando ${formatDistance(opcion.metrosTransbordo)} ` +
-    `hasta ${conParada(opcion.segundo.subida)} y coge la línea ${opcion.segundo.lin} hasta ` +
+    `${capitaliza(textoLineas(opcion.primero.lin, opcion.primero.lineasAlternativas))} desde ${conParada(opcion.primero.origen)} ` +
+    `hasta ${conParada(opcion.primero.bajada)}, ${opcion.primero.paradasEnBus} paradas. ` +
+    `Cambia andando ${formatDistance(opcion.metrosTransbordo)} hasta ${conParada(opcion.segundo.subida)} ` +
+    `y coge ${textoLineas(opcion.segundo.lin, opcion.segundo.lineasAlternativas)} hasta ` +
     `${conParada(opcion.segundo.bajada)}, ${opcion.segundo.paradasEnBus} paradas más. ` +
     `${totalAndando} andando en total.`
   );
+}
+
+function capitaliza(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
 export default function RutaABResultadoScreen() {
@@ -172,6 +190,11 @@ function OpcionRow({
         accessibilityHint="Toca dos veces para ver el recorrido completo de la línea">
         <View style={styles.badgesFila}>
           <Text style={styles.badge}>Línea {opcion.lin}</Text>
+          {opcion.lineasAlternativas?.map((lin) => (
+            <Text key={lin} style={styles.badgeAlt}>
+              o {lin}
+            </Text>
+          ))}
           <Text style={styles.meta}>{opcion.paradasEnBus} paradas</Text>
         </View>
         <Text style={styles.filaTexto}>Sube en {conParada(opcion.origen)}</Text>
@@ -191,8 +214,18 @@ function OpcionRow({
       accessibilityHint="Toca dos veces para ver el recorrido de la primera línea">
       <View style={styles.badgesFila}>
         <Text style={styles.badge}>Línea {opcion.primero.lin}</Text>
+        {opcion.primero.lineasAlternativas?.map((lin) => (
+          <Text key={lin} style={styles.badgeAlt}>
+            o {lin}
+          </Text>
+        ))}
         <Text style={styles.meta}>→</Text>
         <Text style={styles.badge}>Línea {opcion.segundo.lin}</Text>
+        {opcion.segundo.lineasAlternativas?.map((lin) => (
+          <Text key={lin} style={styles.badgeAlt}>
+            o {lin}
+          </Text>
+        ))}
       </View>
       <Text style={styles.filaTexto}>Sube en {conParada(opcion.primero.origen)}</Text>
       <Text style={styles.filaTexto}>Baja en {conParada(opcion.primero.bajada)}</Text>
@@ -224,6 +257,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    overflow: 'hidden',
+  },
+  badgeAlt: {
+    color: theme.textStrong,
+    fontSize: 13,
+    fontWeight: '700',
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.border,
     paddingHorizontal: 8,
     paddingVertical: 2,
     overflow: 'hidden',
