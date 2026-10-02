@@ -100,11 +100,19 @@ function SelectorPunto({
   miUbicacion,
 }: SelectorPuntoProps) {
   const [query, setQuery] = useState('');
-  const [sugerenciasDireccion, setSugerenciasDireccion] = useState<ResultadoDireccion[]>([]);
-  const [buscandoDireccion, setBuscandoDireccion] = useState(false);
-  const [errorDireccion, setErrorDireccion] = useState('');
-
   const q = query.trim();
+  // La respuesta recuerda para qué texto se pidió: "buscando" se deduce (aún no es la
+  // del texto actual) en vez de ponerlo a mano desde el efecto, que lo prohíbe
+  // react-hooks/set-state-in-effect.
+  const [direccion, setDireccion] = useState<{
+    q: string;
+    sugerencias: ResultadoDireccion[];
+    error: string;
+  }>();
+  const pideDireccion = q.length >= MIN_LETRAS_DIRECCION;
+  const buscandoDireccion = pideDireccion && direccion?.q !== q;
+  const sugerenciasDireccion = pideDireccion ? (direccion?.sugerencias ?? []) : [];
+  const errorDireccion = pideDireccion && !buscandoDireccion ? (direccion?.error ?? '') : '';
   const resultadosParada = useMemo(
     () => (q.length < MIN_LETRAS ? [] : buscarParadas(q, MAX_RESULTADOS_PARADA)),
     [q],
@@ -115,33 +123,29 @@ function SelectorPunto({
   // tras la última tecla, para no lanzar una petición por cada letra.
   useEffect(() => {
     if (q.length < MIN_LETRAS_DIRECCION) {
-      setSugerenciasDireccion([]);
-      setErrorDireccion('');
-      setBuscandoDireccion(false);
       return;
     }
     let activo = true;
-    setBuscandoDireccion(true);
-    setErrorDireccion('');
     const temporizador = setTimeout(() => {
       geocodificarDireccion(q)
         .then((resultados) => {
-          if (!activo) {
-            return;
-          }
-          setSugerenciasDireccion(resultados);
-          if (resultados.length === 0) {
-            setErrorDireccion('No se ha encontrado esa dirección.');
+          if (activo) {
+            setDireccion({
+              q,
+              sugerencias: resultados,
+              error: resultados.length === 0 ? 'No se ha encontrado esa dirección.' : '',
+            });
           }
         })
         .catch((error) => {
           if (activo) {
-            setErrorDireccion(
-              `No se ha podido buscar la dirección: ${String((error as Error).message ?? error)}`,
-            );
+            setDireccion((previa) => ({
+              q,
+              sugerencias: previa?.sugerencias ?? [],
+              error: `No se ha podido buscar la dirección: ${String((error as Error).message ?? error)}`,
+            }));
           }
-        })
-        .finally(() => activo && setBuscandoDireccion(false));
+        });
     }, DEBOUNCE_DIRECCION_MS);
     return () => {
       activo = false;

@@ -99,18 +99,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentLocation, setCurrentLocation] = useState<CurrentLocation | undefined>(undefined);
   const [diaServicio, setDiaServicio] = useState<DiaServicio | undefined>(undefined);
   const [searchRadiusM, setSearchRadiusState] = useState<number>(DEFAULT_RADIUS);
-  const [nearby, setNearby] = useState<NearbyStop[]>([]);
+  // Las cercanas recuerdan para qué ubicación y radio se pidieron: así "cargando" se
+  // deduce en vez de ponerlo a mano desde el efecto (react-hooks/set-state-in-effect).
+  const [cercanas, setCercanas] = useState<{
+    ubicacion: CurrentLocation;
+    radio: number;
+    paradas: NearbyStop[];
+  }>();
   const [favoriteLineas, setFavoriteLineas] = useState<string[]>([]);
   const [notificacionesActivas, setNotifState] = useState(false);
   const [umbralMin, setUmbralState] = useState<number>(DEFAULT_UMBRAL);
   const [loadingLineas, setLoadingLineas] = useState(false);
-  const [loadingNearby, setLoadingNearby] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [aviso, setAviso] = useState<AvisoUI | null>(null);
   const [viajeActivo, setViajeActivo] = useState<ViajeActivo | null>(null);
 
   const lineasRef = useRef<Linea[]>([]);
-  lineasRef.current = lineas;
+  // En un efecto: escribir un ref durante el render lo prohíbe react-hooks/refs.
+  useEffect(() => {
+    lineasRef.current = lineas;
+  }, [lineas]);
 
   // Id incremental para que dos avisos con el mismo texto se distingan.
   const avisoIdRef = useRef(0);
@@ -120,7 +128,78 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
   const descartarAviso = useCallback(() => setAviso(null), []);
 
-  // Carga inicial desde caché.
+  // Tipo de día de servicio (laborable/sábado/festivo) y aviso de huelga.
+  useEffect(() => {
+    let active = true;
+    getDiaServicio()
+      .then((dia) => active && dia && setDiaServicio(dia))
+      .catch(() => {
+        // no crítico
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Paradas cercanas: se recalculan (llamada a la API) al cambiar ubicación o radio.
+  const nearby = useMemo(
+    () => (currentLocation ? (cercanas?.paradas ?? []) : []),
+    [currentLocation, cercanas],
+  );
+  const loadingNearby =
+    !!currentLocation &&
+    (cercanas?.ubicacion !== currentLocation || cercanas.radio !== searchRadiusM);
+  useEffect(() => {
+    if (!currentLocation) {
+      return;
+    }
+    let active = true;
+    const pedida = { ubicacion: currentLocation, radio: searchRadiusM };
+    getStopsAround(currentLocation.lat, currentLocation.lon, searchRadiusM)
+      .then((r) => active && setCercanas({ ...pedida, paradas: r }))
+      .catch((error) => {
+        if (active) {
+          // Se conservan las anteriores, pero ya no se está cargando.
+          setCercanas((previas) => ({ ...pedida, paradas: previas?.paradas ?? [] }));
+          notificar(`No se pudieron cargar las paradas cercanas: ${errText(error)}`, 'error');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentLocation, searchRadiusM, notificar]);
+
+  const refreshLineas = useCallback(
+    async (force = false) => {
+      if (!force) {
+        const ts = Number((await AsyncStorage.getItem(STORAGE_LINEAS_TS)) ?? 0);
+        if (lineasRef.current.length > 0 && Date.now() - ts < STATIC_TTL_MS) {
+          return;
+        }
+      }
+      setLoadingLineas(true);
+      try {
+        const data = await getLineas();
+        if (data.length > 0) {
+          setLineas(data);
+          await Promise.all([
+            AsyncStorage.setItem(STORAGE_LINEAS, JSON.stringify(data)),
+            AsyncStorage.setItem(STORAGE_LINEAS_TS, String(Date.now())),
+          ]);
+        }
+      } catch (error) {
+        if (lineasRef.current.length === 0) {
+          notificar(`No se pudieron cargar las líneas: ${errText(error)}`, 'error');
+        }
+      } finally {
+        setLoadingLineas(false);
+      }
+    },
+    [notificar],
+  );
+
+  // Carga inicial desde caché. Va después de refreshLineas, que usa: antes de declararla
+  // lo marca react-hooks/immutability.
   useEffect(() => {
     const load = async () => {
       const [favRaw, lineasRaw, locRaw, radiusRaw, favLinRaw, notifRaw, umbralRaw] =
@@ -160,69 +239,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Tipo de día de servicio (laborable/sábado/festivo) y aviso de huelga.
-  useEffect(() => {
-    let active = true;
-    getDiaServicio()
-      .then((dia) => active && dia && setDiaServicio(dia))
-      .catch(() => {
-        // no crítico
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Paradas cercanas: se recalculan (llamada a la API) al cambiar ubicación o radio.
-  useEffect(() => {
-    if (!currentLocation) {
-      setNearby([]);
-      return;
-    }
-    let active = true;
-    setLoadingNearby(true);
-    getStopsAround(currentLocation.lat, currentLocation.lon, searchRadiusM)
-      .then((r) => active && setNearby(r))
-      .catch((error) => {
-        if (active) {
-          notificar(`No se pudieron cargar las paradas cercanas: ${errText(error)}`, 'error');
-        }
-      })
-      .finally(() => active && setLoadingNearby(false));
-    return () => {
-      active = false;
-    };
-  }, [currentLocation, searchRadiusM, notificar]);
-
-  const refreshLineas = useCallback(
-    async (force = false) => {
-      if (!force) {
-        const ts = Number((await AsyncStorage.getItem(STORAGE_LINEAS_TS)) ?? 0);
-        if (lineasRef.current.length > 0 && Date.now() - ts < STATIC_TTL_MS) {
-          return;
-        }
-      }
-      setLoadingLineas(true);
-      try {
-        const data = await getLineas();
-        if (data.length > 0) {
-          setLineas(data);
-          await Promise.all([
-            AsyncStorage.setItem(STORAGE_LINEAS, JSON.stringify(data)),
-            AsyncStorage.setItem(STORAGE_LINEAS_TS, String(Date.now())),
-          ]);
-        }
-      } catch (error) {
-        if (lineasRef.current.length === 0) {
-          notificar(`No se pudieron cargar las líneas: ${errText(error)}`, 'error');
-        }
-      } finally {
-        setLoadingLineas(false);
-      }
-    },
-    [notificar],
-  );
 
   const refreshLocation = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -415,7 +431,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void refrescarViaje();
+    // La primera lectura va encadenada y no por refrescarViaje(): llamar desde el cuerpo
+    // del efecto a algo que fija estado lo prohíbe react-hooks/set-state-in-effect.
+    void leerViajeActivo().then(setViajeActivo);
     const sub = AppState.addEventListener('change', (estado) => {
       if (estado === 'active') {
         void refrescarViaje();

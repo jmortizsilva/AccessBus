@@ -2,7 +2,7 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Aviso, getLlegadas } from '../services/emt';
+import { Aviso, getLlegadas, Llegadas } from '../services/emt';
 import { asegurarPermisoNotificaciones, avisar } from '../services/notificaciones';
 import { lineasDeParada, sentidoDeLinea } from '../data/red';
 import { useApp } from '../state/AppContext';
@@ -36,83 +36,92 @@ export default function ParadaScreen() {
   // en cada refresco mientras el autobús sigue por debajo del umbral.
   const avisadas = useRef<Set<string>>(new Set());
   const vigilandoRef = useRef(false);
-  vigilandoRef.current = vigilando;
+  // En un efecto: escribir un ref durante el render lo prohíbe react-hooks/refs. Va antes
+  // que el efecto de carga para que este ya lo encuentre al día.
+  useEffect(() => {
+    vigilandoRef.current = vigilando;
+  }, [vigilando]);
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: '' });
   }, [navigation]);
 
-  const load = useCallback(
-    async (silent: boolean) => {
-      if (!silent) {
-        setLoading(true);
-        setError('');
+  // Aplica una respuesta ya recibida. Separado de la petición para que el efecto pueda
+  // encadenarla: react-hooks/set-state-in-effect prohíbe llamar desde el cuerpo del
+  // efecto a una función que fije estado, aunque lo haga tras un await.
+  const aplicar = useCallback(
+    ({ tiempos, avisos: nuevos, info }: Llegadas) => {
+      if (!mounted.current) {
+        return;
       }
-      try {
-        // Una sola llamada trae tiempos, avisos y los datos de la parada.
-        const {
-          tiempos,
-          avisos: nuevos,
-          info,
-        } = await getLlegadas(parada.stopCode, {
-          avisos: true,
-          info: true,
-        });
-        if (!mounted.current) {
-          return;
-        }
-        setTimes(tiempos);
-        setAvisos(nuevos);
-        setError('');
+      setTimes(tiempos);
+      setAvisos(nuevos);
+      setError('');
 
-        // Vigilancia: avisa cuando una línea baja del umbral configurado.
-        if (vigilandoRef.current) {
-          for (const t of tiempos) {
-            if (t.minutos === undefined || t.minutos > umbralMin) {
-              avisadas.current.delete(t.linea);
-              continue;
-            }
-            if (avisadas.current.has(t.linea)) {
-              continue;
-            }
-            avisadas.current.add(t.linea);
-            void avisar(
-              `Línea ${t.linea} llegando`,
-              `${parada.stopName}: ${t.minutos <= 0 ? 'está en la parada' : `llega en ${t.minutos} min`}` +
-                (t.destino ? `, hacia ${t.destino}` : ''),
-            );
+      // Vigilancia: avisa cuando una línea baja del umbral configurado.
+      if (vigilandoRef.current) {
+        for (const t of tiempos) {
+          if (t.minutos === undefined || t.minutos > umbralMin) {
+            avisadas.current.delete(t.linea);
+            continue;
           }
+          if (avisadas.current.has(t.linea)) {
+            continue;
+          }
+          avisadas.current.add(t.linea);
+          void avisar(
+            `Línea ${t.linea} llegando`,
+            `${parada.stopName}: ${t.minutos <= 0 ? 'está en la parada' : `llega en ${t.minutos} min`}` +
+              (t.destino ? `, hacia ${t.destino}` : ''),
+          );
         }
-        if (info) {
-          setParada((prev) => ({
-            ...prev,
-            stopName: info.stopName ?? prev.stopName,
-            lineasPaso: info.lineasPaso ?? prev.lineasPaso,
-          }));
-        }
-      } catch (err) {
-        if (mounted.current && !silent) {
-          setError(String((err as Error).message ?? err));
-        }
-      } finally {
-        if (mounted.current && !silent) {
-          setLoading(false);
-        }
+      }
+      if (info) {
+        setParada((prev) => ({
+          ...prev,
+          stopName: info.stopName ?? prev.stopName,
+          lineasPaso: info.lineasPaso ?? prev.lineasPaso,
+        }));
       }
     },
-    [parada.stopCode, parada.stopName, umbralMin],
+    [parada.stopName, umbralMin],
   );
+
+  // Una sola llamada trae tiempos, avisos y los datos de la parada. Si no es
+  // silenciosa, informa del error y apaga "cargando" (que enciende quien la pide).
+  const cargar = useCallback(
+    (silent: boolean) =>
+      getLlegadas(parada.stopCode, { avisos: true, info: true })
+        .then(aplicar)
+        .catch((err) => {
+          if (mounted.current && !silent) {
+            setError(String((err as Error).message ?? err));
+          }
+        })
+        .finally(() => {
+          if (mounted.current && !silent) {
+            setLoading(false);
+          }
+        }),
+    [parada.stopCode, aplicar],
+  );
+
+  const recargar = () => {
+    setLoading(true);
+    setError('');
+    void cargar(false);
+  };
 
   // Mientras se vigila conviene refrescar más a menudo.
   useEffect(() => {
     mounted.current = true;
-    void load(false);
-    const timer = setInterval(() => void load(true), vigilando ? VIGILANCIA_MS : AUTO_REFRESH_MS);
+    void cargar(false);
+    const timer = setInterval(() => void cargar(true), vigilando ? VIGILANCIA_MS : AUTO_REFRESH_MS);
     return () => {
       mounted.current = false;
       clearInterval(timer);
     };
-  }, [load, vigilando]);
+  }, [cargar, vigilando]);
 
   const fav = isFavorite(parada.stopCode);
   // Preferimos el índice precalculado, que además dice hacia dónde va cada línea.
@@ -153,7 +162,7 @@ export default function ParadaScreen() {
       <View style={styles.actionsRow}>
         <Pressable
           style={styles.secondaryButton}
-          onPress={() => void load(false)}
+          onPress={recargar}
           accessibilityRole="button"
           accessibilityLabel="Actualizar tiempos">
           <Text style={styles.secondaryText}>Actualizar</Text>
@@ -205,7 +214,7 @@ export default function ParadaScreen() {
           <Text style={styles.note}>No se pudieron cargar los tiempos.</Text>
           <Pressable
             style={styles.secondaryButton}
-            onPress={() => void load(false)}
+            onPress={recargar}
             accessibilityRole="button"
             accessibilityLabel="Reintentar">
             <Text style={styles.secondaryText}>Reintentar</Text>

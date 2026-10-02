@@ -46,10 +46,15 @@ export default function LineaParadasScreen() {
   // públicas para que las acciones de rotor puedan consultar cada línea.
   const labelById = useMemo(() => Object.fromEntries(lineas.map((l) => [l.id, l.lin])), [lineas]);
 
-  const [paradas, setParadas] = useState<Parada[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [sentido, setSentido] = useState<1 | 2>(sentidoPedido ?? 1);
+  // La carga lleva la clave (línea y sentido) a la que pertenece: así "cargando" se
+  // deduce en vez de ponerlo a mano desde el efecto, que react-hooks/set-state-in-effect
+  // prohíbe. Mientras llega la nueva se siguen viendo las paradas anteriores.
+  const claveCarga = `${linea.id}-${sentido}`;
+  const [carga, setCarga] = useState<{ clave: string; paradas: Parada[]; error: string }>();
+  const paradas = useMemo(() => carga?.paradas ?? [], [carga]);
+  const loading = carga?.clave !== claveCarga;
+  const error = loading ? '' : carga.error;
 
   // Cabecera unificada dentro de la pantalla; la barra de navegación se deja sin
   // título para no repetir "Línea E1" dos veces.
@@ -61,12 +66,18 @@ export default function LineaParadasScreen() {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setError('');
+    const clave = `${linea.id}-${sentido}`;
     getStopsLinea(linea.id, sentido, labelById)
-      .then((data) => active && setParadas(data))
-      .catch((err) => active && setError(String((err as Error).message ?? err)))
-      .finally(() => active && setLoading(false));
+      .then((data) => active && setCarga({ clave, paradas: data, error: '' }))
+      .catch(
+        (err) =>
+          active &&
+          setCarga((previa) => ({
+            clave,
+            paradas: previa?.paradas ?? [],
+            error: String((err as Error).message ?? err),
+          })),
+      );
     return () => {
       active = false;
     };

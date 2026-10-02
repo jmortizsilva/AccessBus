@@ -1,6 +1,9 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    // SDK 57 / TS 6 dejaron de auto-incluir @types/jest: sin esto los describe/it/expect de las
+    // pruebas no se reconocen. Solo afecta a tipos globales; React y RN entran por import.
+    "types": ["jest"]
   }
 }

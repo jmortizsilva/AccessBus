@@ -9,7 +9,7 @@ import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { formatDistance } from '../utils/distance';
 import { OpcionRuta } from '../utils/rutaAB';
-import { Parada } from '../types';
+import { Linea, Parada } from '../types';
 
 type Nav = NativeStackNavigationProp<BuscarStackParamList, 'RutaABResultado'>;
 type Ruta = RouteProp<BuscarStackParamList, 'RutaABResultado'>;
@@ -64,9 +64,17 @@ export default function RutaABResultadoScreen() {
   const { origen, destino } = route.params;
   const { lineas, loadingLineas, refreshLineas } = useApp();
 
-  const [resultado, setResultado] = useState<ResultadoRutaAB | undefined>();
-  const [buscando, setBuscando] = useState(true);
-  const [error, setError] = useState('');
+  // La búsqueda recuerda con qué líneas se hizo: "buscando" se deduce (no es de las
+  // líneas actuales) en vez de ponerlo a mano desde el efecto, que lo prohíbe
+  // react-hooks/set-state-in-effect.
+  const [busqueda, setBusqueda] = useState<{
+    lineas: Linea[];
+    resultado?: ResultadoRutaAB;
+    error: string;
+  }>();
+  const buscando = busqueda?.lineas !== lineas;
+  const resultado = busqueda?.resultado;
+  const error = buscando ? '' : busqueda.error;
 
   useEffect(() => {
     void refreshLineas();
@@ -77,12 +85,17 @@ export default function RutaABResultadoScreen() {
       return;
     }
     let activo = true;
-    setBuscando(true);
-    setError('');
     buscarRutaAB(origen, destino, lineas)
-      .then((r) => activo && setResultado(r))
-      .catch((err) => activo && setError(String((err as Error).message ?? err)))
-      .finally(() => activo && setBuscando(false));
+      .then((r) => activo && setBusqueda({ lineas, resultado: r, error: '' }))
+      .catch(
+        (err) =>
+          activo &&
+          setBusqueda((previa) => ({
+            lineas,
+            resultado: previa?.resultado,
+            error: String((err as Error).message ?? err),
+          })),
+      );
     return () => {
       activo = false;
     };

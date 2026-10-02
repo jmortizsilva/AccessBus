@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../state/AppContext';
@@ -24,15 +24,15 @@ const VISIBLE_MS = 2600;
 export default function Aviso() {
   const { aviso, descartarAviso } = useApp();
   const insets = useSafeAreaInsets();
-  const opacidad = useRef(new Animated.Value(0)).current;
-  const [visible, setVisible] = useState<{ texto: string; tipo: 'exito' | 'error' } | null>(null);
+  // En un estado y no en un ref: leer ref.current durante el render lo prohíbe react-hooks/refs.
+  const [opacidad] = useState(() => new Animated.Value(0));
+  // Lo que se pinta es el propio aviso: se descarta justo al terminar de desvanecerse.
+  const visible = aviso;
 
   useEffect(() => {
     if (!aviso) {
       return;
     }
-    setVisible({ texto: aviso.texto, tipo: aviso.tipo });
-
     // Vibración y voz en cuanto llega el aviso.
     void Haptics.notificationAsync(
       aviso.tipo === 'error'
@@ -47,7 +47,6 @@ export default function Aviso() {
     Animated.timing(opacidad, { toValue: 1, duration: 180, useNativeDriver: true }).start();
     const t = setTimeout(() => {
       Animated.timing(opacidad, { toValue: 0, duration: 320, useNativeDriver: true }).start(() => {
-        setVisible(null);
         descartarAviso();
       });
     }, VISIBLE_MS);
