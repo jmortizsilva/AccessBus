@@ -35,7 +35,6 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "react-native-bottom-tabs",
       [
         "expo-splash-screen",
         {

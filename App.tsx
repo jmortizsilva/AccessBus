@@ -1,5 +1,9 @@
-import { createNativeBottomTabNavigator } from '@bottom-tabs/react-navigation';
 import { DarkTheme, NavigationContainer } from '@react-navigation/native';
+// Pestañas nativas de React Navigation, servidas por react-native-screens. Sustituyen a
+// react-native-bottom-tabs, que en iOS 26/27 dejaba a VoiceOver diciendo "seleccionada" en
+// todas las pestañas ya visitadas cuando llevan icono: reasignaba las imágenes de cada
+// UITabBarItem en cada pasada de layout (callstack/react-native-bottom-tabs#590).
+import { createNativeBottomTabNavigator } from '@react-navigation/bottom-tabs/unstable';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Aviso from './src/components/Aviso';
@@ -34,15 +38,18 @@ export default function App() {
         <StatusBar style="light" />
         <NavigationContainer theme={navigationTheme}>
           <Tab.Navigator
-            tabBarStyle={{ backgroundColor: theme.card }}
-            tabBarActiveTintColor={theme.primary}
-            tabBarInactiveTintColor={theme.textMuted}>
+            screenOptions={{
+              // El fondo solo se aplica hasta iOS 18; en 26 y 27 manda el cristal del sistema.
+              tabBarStyle: { backgroundColor: theme.card },
+              tabBarActiveTintColor: theme.primary,
+              tabBarInactiveTintColor: theme.textMuted,
+            }}>
             <Tab.Screen
               name="Inicio"
               component={InicioStack}
               options={{
                 tabBarLabel: 'Inicio',
-                tabBarIcon: () => ({ sfSymbol: 'star.fill' }),
+                tabBarIcon: { type: 'sfSymbol', name: 'star.fill' },
               }}
             />
             <Tab.Screen
@@ -50,16 +57,18 @@ export default function App() {
               component={LineasStack}
               options={{
                 tabBarLabel: 'Líneas',
-                tabBarIcon: () => ({ sfSymbol: 'bus.fill' }),
+                tabBarIcon: { type: 'sfSymbol', name: 'bus.fill' },
               }}
             />
             <Tab.Screen
               name="Buscar"
               component={BuscarStack}
               options={{
+                // El elemento de sistema trae la lupa y, en iOS 26 y posteriores, coloca la
+                // pestaña aparte, junto a la barra. La etiqueta propia sustituye a la del
+                // sistema, que saldría según el idioma del dispositivo.
+                tabBarSystemItem: 'search',
                 tabBarLabel: 'Buscar',
-                tabBarIcon: () => ({ sfSymbol: 'magnifyingglass' }),
-                role: 'search',
               }}
             />
             <Tab.Screen
@@ -67,7 +76,7 @@ export default function App() {
               component={AjustesScreen}
               options={{
                 tabBarLabel: 'Ajustes',
-                tabBarIcon: () => ({ sfSymbol: 'gearshape.fill' }),
+                tabBarIcon: { type: 'sfSymbol', name: 'gearshape.fill' },
               }}
             />
           </Tab.Navigator>

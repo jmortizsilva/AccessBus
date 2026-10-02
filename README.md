@@ -33,7 +33,7 @@ Esqueleto funcional que **compila y empaqueta** (typecheck + bundle iOS OK). Fal
   vigentes**, **líneas que pasan por la parada** y **otras paradas cerca**.
 
 ### Accesibilidad (VoiceOver)
-- Pestañas nativas reales (`react-native-bottom-tabs`).
+- Pestañas nativas reales (`createNativeBottomTabNavigator` de `@react-navigation/bottom-tabs/unstable`, sobre las `Tabs` de `react-native-screens`).
 - **Acciones de rotor unificadas** en las listas de paradas: doble toque abre la parada;
   una acción por cada línea consulta y **anuncia su tiempo en vivo**; otra añade o quita
   de favoritos.
