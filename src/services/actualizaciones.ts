@@ -22,12 +22,9 @@ import { AccessibilityInfo, Alert, AppState } from 'react-native';
  * Hay que actualizarla en CADA `eas update`: es lo que lee el usuario.
  */
 export const NOVEDADES = [
-  'Buscar paradas por nombre, ahora completo y sin conexión.',
-  'En cada parada, los próximos autobuses y las líneas que pasan van juntos.',
-  'Las líneas aparecen en orden lógico, y el buscador tiene botón Cancelar.',
-  'En el rotor de una parada, cada línea dice hacia dónde va.',
-  'Al abrir una línea, sus horarios se despliegan solo si los pides.',
-  'Al confirmar una acción: un aviso breve, con voz y una pequeña vibración.',
+  'Planificar ruta, en Buscar: de una parada o dirección a otra, también con transbordo.',
+  'En una línea, "Avisarme al bajar": te avisa cuando quedan 2 paradas, 1 y al llegar, aunque la pantalla esté bloqueada.',
+  'VoiceOver lee el número de parada en el recorrido de una línea y en las rutas.',
   'Con VoiceOver, la barra de pestañas solo dice "seleccionada" en la pestaña activa.',
 ];
 
