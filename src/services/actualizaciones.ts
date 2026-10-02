@@ -6,7 +6,7 @@ import { AccessibilityInfo, Alert, AppState } from 'react-native';
 /**
  * Actualizaciones por aire (OTA) con expo-updates.
  *
- * `runtimeVersion` es FIJO ("1.0.0" en app.json), no huella: en Windows la huella
+ * `runtimeVersion` es FIJO (a mano en app.json), no huella: en Windows la huella
  * deriva y el update se ignora en silencio (ver GUIA-ENTORNO-IOS). El precio es
  * que la regla pasa a ser manual: si se toca algo nativo (subir de SDK, añadir un
  * módulo, cambiar permisos) hay que subir ese número y recompilar; por aire solo
