@@ -28,13 +28,15 @@ export const NOVEDADES = [
   'En el rotor de una parada, cada línea dice hacia dónde va.',
   'Al abrir una línea, sus horarios se despliegan solo si los pides.',
   'Al confirmar una acción: un aviso breve, con voz y una pequeña vibración.',
+  'Con VoiceOver, la barra de pestañas solo dice "seleccionada" en la pestaña activa.',
 ];
 
 const CLAVE_ULTIMO_ID = 'actualizaciones.ultimoUpdateId';
 
-// En RN 0.81 announceForAccessibilityWithOptions solo reenvía `queue` al nativo
-// (el antiguo `priority` ya no existe). Con `inmediato` (queue:false) el anuncio
-// se lee ya, saltando la cola, que es lo más parecido a "no lo pierdas".
+// Solo `queue`: es la palanca que funciona en todas las versiones de RN. Desde la
+// 0.86 el nativo también reenvía `priority` (iOS 17+), pero aquí no se usa todavía
+// (ver GUIA-ACCESIBILIDAD-RN). Con `inmediato` (queue:false) el anuncio se lee ya,
+// saltando la cola, que es lo más parecido a "no lo pierdas".
 function anunciar(mensaje: string, inmediato = false): void {
   AccessibilityInfo.announceForAccessibilityWithOptions(mensaje, { queue: !inmediato });
 }
