@@ -22,10 +22,8 @@ import { AccessibilityInfo, Alert, AppState } from 'react-native';
  * Hay que actualizarla en CADA `eas update`: es lo que lee el usuario.
  */
 export const NOVEDADES = [
-  'Planificar ruta, en Buscar: de una parada o dirección a otra, también con transbordo.',
-  'En una línea, "Avisarme al bajar": te avisa cuando quedan 2 paradas, 1 y al llegar, aunque la pantalla esté bloqueada.',
-  'VoiceOver lee el número de parada en el recorrido de una línea y en las rutas.',
-  'Con VoiceOver, la barra de pestañas solo dice "seleccionada" en la pestaña activa.',
+  'Con un viaje en curso, "Ver recorrido" en Inicio dice por qué parada vas y cuántas quedan.',
+  'El aviso de que has llegado a tu parada se quita solo a los diez minutos.',
 ];
 
 const CLAVE_ULTIMO_ID = 'actualizaciones.ultimoUpdateId';
