@@ -8,12 +8,13 @@ import { ViajeActivo } from '../services/seguimientoViaje';
 import { useApp } from '../state/AppContext';
 import { theme } from '../theme';
 import { formatDistance } from '../utils/distance';
+import { textoRestantes } from '../utils/viaje';
 
 function textoViaje(viaje: ViajeActivo): string {
   switch (viaje.estado) {
     case 'activo': {
-      const restantes = viaje.indiceDestino - viaje.indiceActual;
-      return `🔔 Línea ${viaje.lin} · bajas en ${viaje.destinoNombre} · quedan ${Math.max(0, restantes)} paradas`;
+      const restantes = Math.max(0, viaje.indiceDestino - viaje.indiceActual);
+      return `🔔 Línea ${viaje.lin} · bajas en ${viaje.destinoNombre} · ${textoRestantes(restantes).toLowerCase()}`;
     }
     case 'llegado':
       return `✅ Has llegado a ${viaje.destinoNombre}`;
@@ -71,21 +72,31 @@ export default function InicioHomeScreen() {
 
       {viajeActivo ? (
         <View
-          style={[styles.viajeBanner, viajeActivo.estado !== 'activo' && styles.viajeBannerFin]}
-          accessible
-          accessibilityLabel={textoViaje(viajeActivo)}>
-          <Text style={styles.viajeTexto}>{textoViaje(viajeActivo)}</Text>
-          <Pressable
-            style={styles.viajeBoton}
-            onPress={() => void cancelarViaje()}
-            accessibilityRole="button"
-            accessibilityLabel={
-              viajeActivo.estado === 'activo' ? 'Cancelar aviso de parada' : 'Descartar aviso'
-            }>
-            <Text style={styles.viajeBotonTexto}>
-              {viajeActivo.estado === 'activo' ? 'Cancelar' : 'Vale'}
-            </Text>
-          </Pressable>
+          style={[styles.viajeBanner, viajeActivo.estado !== 'activo' && styles.viajeBannerFin]}>
+          {/* Sin `accessible` en el recuadro: lo convertiría en un solo elemento y los botones no se alcanzarían. */}
+          <Text style={styles.viajeTexto} accessibilityLabel={textoViaje(viajeActivo)}>
+            {textoViaje(viajeActivo)}
+          </Text>
+          <View style={styles.viajeBotones}>
+            <Pressable
+              style={styles.viajeBoton}
+              onPress={() => navigation.navigate('Viaje')}
+              accessibilityRole="button"
+              accessibilityLabel="Ver recorrido">
+              <Text style={styles.viajeBotonTexto}>Ver recorrido</Text>
+            </Pressable>
+            <Pressable
+              style={styles.viajeBoton}
+              onPress={() => void cancelarViaje()}
+              accessibilityRole="button"
+              accessibilityLabel={
+                viajeActivo.estado === 'activo' ? 'Cancelar aviso de parada' : 'Descartar aviso'
+              }>
+              <Text style={styles.viajeBotonTexto}>
+                {viajeActivo.estado === 'activo' ? 'Cancelar' : 'Vale'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
 
@@ -176,9 +187,7 @@ const styles = StyleSheet.create({
   diaText: { color: theme.textStrong, fontSize: 16, fontWeight: '700' },
   diaHuelga: { color: '#e0a33e', fontSize: 14, fontWeight: '700' },
   viajeBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    gap: 4,
     backgroundColor: theme.card,
     borderRadius: 12,
     borderLeftWidth: 4,
@@ -187,7 +196,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   viajeBannerFin: { borderLeftColor: '#e0a33e' },
-  viajeTexto: { flex: 1, color: theme.textStrong, fontSize: 15, fontWeight: '600' },
+  viajeBotones: { flexDirection: 'row', justifyContent: 'flex-end', gap: 20 },
+  viajeTexto: { color: theme.textStrong, fontSize: 15, fontWeight: '600' },
   viajeBoton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
   viajeBotonTexto: { color: theme.primary, fontSize: 15, fontWeight: '700' },
   sectionHeader: { color: theme.text, fontSize: 20, fontWeight: '600', marginTop: 6 },

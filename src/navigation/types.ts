@@ -16,6 +16,8 @@ export type InicioStackParamList = {
   InicioHome: undefined;
   Parada: { parada: Parada };
   LineaParadas: { linea: Linea; sentido?: 1 | 2 };
+  /** Solo en Inicio: se abre desde el recuadro del viaje en curso. */
+  Viaje: undefined;
 };
 
 export type LineasStackParamList = {
