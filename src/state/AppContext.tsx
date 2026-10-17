@@ -20,7 +20,7 @@ import {
   NearbyResult,
 } from '../services/emt';
 import { asegurarPermisoNotificaciones, avisar } from '../services/notificaciones';
-import { cancelarViajeActivo, leerViajeActivo, ViajeActivo } from '../services/seguimientoViaje';
+import { cancelarViajeActivo, leerViajeVigente, ViajeActivo } from '../services/seguimientoViaje';
 import { Linea, Parada } from '../types';
 
 const STORAGE_FAVORITES = 'busmadrid.favorites.v1';
@@ -422,7 +422,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // plano directamente en AsyncStorage (no tiene acceso al árbol de React), así
   // que aquí solo se relee: al arrancar y cada vez que la app vuelve a primer plano.
   const refrescarViaje = useCallback(async () => {
-    setViajeActivo(await leerViajeActivo());
+    setViajeActivo(await leerViajeVigente());
   }, []);
 
   const cancelarViaje = useCallback(async () => {
@@ -433,7 +433,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // La primera lectura va encadenada y no por refrescarViaje(): llamar desde el cuerpo
     // del efecto a algo que fija estado lo prohíbe react-hooks/set-state-in-effect.
-    void leerViajeActivo().then(setViajeActivo);
+    void leerViajeVigente().then(setViajeActivo);
     const sub = AppState.addEventListener('change', (estado) => {
       if (estado === 'active') {
         void refrescarViaje();

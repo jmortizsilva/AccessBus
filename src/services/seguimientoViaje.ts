@@ -7,6 +7,7 @@ import {
   NivelAviso,
   PuntoGPS,
 } from '../utils/seguimientoParada';
+import { viajeVigente } from '../utils/viaje';
 import { asegurarPermisoNotificaciones, avisar } from './notificaciones';
 
 /**
@@ -39,6 +40,8 @@ export interface ViajeActivo {
   nivelAvisado: NivelAviso | null;
   iniciadoEn: number;
   ultimaActividadEn: number;
+  /** Cuándo dejó de estar activo; a partir de ahí se muestra un rato y se borra. */
+  finalizadoEn?: number;
   estado: EstadoViaje;
 }
 
@@ -52,6 +55,16 @@ export async function leerViajeActivo(): Promise<ViajeActivo | null> {
   } catch {
     return null;
   }
+}
+
+/** Como `leerViajeActivo`, pero borra el registro si terminó hace rato. */
+export async function leerViajeVigente(ahora = Date.now()): Promise<ViajeActivo | null> {
+  const viaje = await leerViajeActivo();
+  if (viaje && !viajeVigente(viaje, ahora)) {
+    await AsyncStorage.removeItem(STORAGE_VIAJE);
+    return null;
+  }
+  return viaje;
 }
 
 async function guardarViaje(viaje: ViajeActivo): Promise<void> {
@@ -144,7 +157,7 @@ export async function iniciarViaje(
 export async function detenerViaje(motivo: Exclude<EstadoViaje, 'activo'>): Promise<void> {
   const viaje = await leerViajeActivo();
   if (viaje) {
-    await guardarViaje({ ...viaje, estado: motivo });
+    await guardarViaje({ ...viaje, estado: motivo, finalizadoEn: Date.now() });
   }
   await pararTracking();
 }
